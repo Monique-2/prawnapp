@@ -1,0 +1,80 @@
+[21-Oct-2025 06:21:15 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[13-Nov-2025 06:37:17 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[13-Nov-2025 06:41:51 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[13-Nov-2025 06:56:00 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:30:50 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:30:52 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:31:52 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:34:05 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:34:07 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:35:46 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:35:53 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[14-Nov-2025 08:35:54 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[19-Mar-2026 13:39:46 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[19-Mar-2026 13:39:56 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[19-Mar-2026 13:39:57 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
+[19-Mar-2026 13:39:57 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pond_id' in 'field list' in C:\xampp\htdocs\smartprawnapp\backend\ponds.php:85
+Stack trace:
+#0 C:\xampp\htdocs\smartprawnapp\backend\ponds.php(85): mysqli->query('SELECT pond_id,...')
+#1 {main}
+  thrown in C:\xampp\htdocs\smartprawnapp\backend\ponds.php on line 85
