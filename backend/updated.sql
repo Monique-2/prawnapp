@@ -49,44 +49,77 @@ CREATE TABLE `water_quality_parameters` (
 DEFAULT CHARSET=utf8mb4 
 COLLATE=utf8mb4_general_ci;
 
--- ============================================
--- 3. FEEDING MANAGEMENT ACTION TABLE
--- ============================================
 CREATE TABLE `feeding_management_action` (
-    `fm_id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `fm_id` INT NOT NULL AUTO_INCREMENT,
+    
     `pond_id` INT NOT NULL,
+
+    -- 🔗 SAME APPROACH AS WATER MANAGEMENT
+    `water_quality_parameters_id` INT DEFAULT NULL,
+
     `scheduled_timestamp` DATETIME NOT NULL,
+
     `amount_of_feed` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     `feed_unit` ENUM('g','kg') NOT NULL DEFAULT 'g',
+
     `action_status` ENUM(
-        'pending','feeding','completed',
-        'canceled_by_user','canceled_by_ai','failed'
+        'pending',
+        'feeding',
+        'completed',
+        'canceled_by_user',
+        'canceled_by_ai',
+        'failed'
     ) NOT NULL DEFAULT 'pending',
+
     `control_mode` ENUM('ai mode','manual mode') NOT NULL DEFAULT 'ai mode',
+
     `fd_id` INT NULL,
+
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP 
         ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (`pond_id`) REFERENCES `ponds`(`id`) 
+
+    PRIMARY KEY (`fm_id`),
+
+    -- ADD INDEXES (important for performance)
+    KEY `idx_pond_id` (`pond_id`),
+    KEY `idx_water_quality_parameters_id` (`water_quality_parameters_id`),
+
+    -- FOREIGN KEYS
+    CONSTRAINT `fk_feeding_pond`
+        FOREIGN KEY (`pond_id`)
+        REFERENCES `ponds`(`id`)
         ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_feeding_water_quality`
+        FOREIGN KEY (`water_quality_parameters_id`)
+        REFERENCES `water_quality_parameters`(`id`)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE
+
 ) ENGINE=InnoDB 
 DEFAULT CHARSET=utf8mb4 
 COLLATE=utf8mb4_unicode_ci;
 
 
 
-CREATE TABLE `water_management_action` (
-    `wm_id`              INT NOT NULL AUTO_INCREMENT,
-    `pond_id`            INT NOT NULL,
-    `wd_id`              INT DEFAULT NULL,
+-- ============================================
+-- WATER MANAGEMENT ACTION TABLE (COMBINED)
+-- ============================================
 
-    -- Fixed: removed trailing comma
-    `action_type`        ENUM('refill') NOT NULL,
+CREATE TABLE `water_management_action` (
+    `wm_id` INT NOT NULL AUTO_INCREMENT,
+    
+    `pond_id` INT NOT NULL,
+    
+    `water_quality_parameters_id` INT DEFAULT NULL,
+
+    `action_type` ENUM('refill') NOT NULL,
 
     `scheduled_timestamp` DATETIME DEFAULT NULL,
 
-    -- Fixed: removed double comma
-    `action_status`      ENUM(
+    `action_status` ENUM(
         'pending',
         'in_progress',
         'completed',
@@ -94,18 +127,74 @@ CREATE TABLE `water_management_action` (
         'failed'
     ) DEFAULT 'pending',
 
-    `created_at`         DATETIME DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`         DATETIME DEFAULT CURRENT_TIMESTAMP 
-                             ON UPDATE CURRENT_TIMESTAMP,
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP 
+        ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (`wm_id`),
 
+    KEY `idx_water_quality_parameters_id` (`water_quality_parameters_id`),
+
     CONSTRAINT `fk_water_management_pond`
-        FOREIGN KEY (`pond_id`) REFERENCES `ponds` (`id`)
+        FOREIGN KEY (`pond_id`)
+        REFERENCES `ponds` (`id`)
         ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_water_action_water_quality`
+        FOREIGN KEY (`water_quality_parameters_id`)
+        REFERENCES `water_quality_parameters` (`id`)
+        ON DELETE SET NULL
         ON UPDATE CASCADE
 
 ) ENGINE=InnoDB 
   DEFAULT CHARSET=utf8mb4 
   COLLATE=utf8mb4_general_ci;
  
+
+/**CREATE TABLE `water_management_action` (
+    `wm_id` INT NOT NULL AUTO_INCREMENT,
+    
+    `pond_id` INT NOT NULL,
+    
+    `water_quality_parameters_id` INT DEFAULT NULL,
+
+    `action_type` ENUM(
+        'refill',
+        'drain_refill',
+        'monitor'
+    ) NOT NULL,
+
+    `scheduled_timestamp` DATETIME DEFAULT NULL,
+
+    `action_status` ENUM(
+        'pending',
+        'in_progress',
+        'completed',
+        'canceled',
+        'failed'
+    ) DEFAULT 'pending',
+
+    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP 
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (`wm_id`),
+
+    KEY `idx_water_quality_parameters_id` (`water_quality_parameters_id`),
+
+    CONSTRAINT `fk_water_management_pond`
+        FOREIGN KEY (`pond_id`)
+        REFERENCES `ponds` (`id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_water_action_water_quality`
+        FOREIGN KEY (`water_quality_parameters_id`)
+        REFERENCES `water_quality_parameters` (`id`)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE
+
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_general_ci;*/

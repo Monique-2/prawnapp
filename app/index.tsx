@@ -116,7 +116,7 @@ export default function HomeScreen() {
   const [notificationsVisible, setNotificationsVisible] = useState(false);
 
   const screenWidth = Dimensions.get('window').width;
-  const BASE_URL = 'http://10.0.0.35/smartprawn/backend/';
+  const BASE_URL = 'http://192.168.1.19/smartprawnapp/backend/';
   const PONDS_URL = `${BASE_URL}ponds.php`;
   const FEEDING_URL = `${BASE_URL}management/feeding_management_action.php`;
   const WATER_URL = `${BASE_URL}management/water_management_action.php`;
