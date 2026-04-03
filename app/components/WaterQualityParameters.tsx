@@ -1,3 +1,4 @@
+import { Feather } from '@expo/vector-icons';
 import React, { useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -37,6 +38,7 @@ interface ParameterModal {
   value: string;
   description: string;
   color: string;
+  accentColor: string;
   paramKey?: ParamKey;
   pondId?: string;
 }
@@ -76,6 +78,7 @@ const WaterQualityParameters: React.FC<Props> = ({
     value: '',
     description: '',
     color: '#BFDBFE',
+    accentColor: '#3B82F6',
   });
   const [paramHistory, setParamHistory] = useState<ParameterRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -94,33 +97,37 @@ const WaterQualityParameters: React.FC<Props> = ({
     Ammonia: 'ammonia',
   };
 
-  const parameterInfo: { [key: string]: { description: string; color: string; unit?: string; chartColor: string; idealRange: { min: number; max: number } } } = {
+  const parameterInfo: { [key: string]: { description: string; color: string; accentColor: string; unit?: string; chartColor: string; idealRange: { min: number; max: number } } } = {
     Temperature: {
       description: 'Water temperature affects prawn metabolism and growth. Ideal range: 26-30°C.',
-      color: '#BFDBFE',
+      color: '#FFF7ED',
+      accentColor: '#D97706',
       unit: '°C',
       chartColor: '#D97706',
       idealRange: { min: 26, max: 30 },
     },
     'pH Level': {
       description: 'pH measures water acidity/alkalinity. Ideal range for prawns: 7.5-8.5.',
-      color: '#BFDBFE',
+      color: '#F0FDF4',
+      accentColor: '#16A34A',
       unit: '',
       chartColor: '#047857',
       idealRange: { min: 7.5, max: 8.5 },
     },
     Salinity: {
       description: 'Salinity impacts prawn osmoregulation. Ideal range: 15-25 ppt.',
-      color: '#BFDBFE',
+      color: '#EFF6FF',
+      accentColor: '#3B82F6',
       unit: 'ppt',
-      chartColor: '#7C3AED',
+      chartColor: '#3B82F6',
       idealRange: { min: 15, max: 25 },
     },
     Ammonia: {
       description: 'Ammonia levels indicate water quality. Should be kept below 0.1 ppm.',
-      color: '#BFDBFE',
+      color: '#FFF1F2',
+      accentColor: '#EF4444',
       unit: 'ppm',
-      chartColor: '#B91C1C',
+      chartColor: '#EF4444',
       idealRange: { min: 0, max: 0.5 },
     },
   };
@@ -161,6 +168,7 @@ const WaterQualityParameters: React.FC<Props> = ({
       value,
       description: parameterInfo[parameter]?.description || 'No description available.',
       color: parameterInfo[parameter]?.color || '#BFDBFE',
+      accentColor: parameterInfo[parameter]?.accentColor || '#3B82F6',
       paramKey,
       pondId,
     });
@@ -237,9 +245,9 @@ const WaterQualityParameters: React.FC<Props> = ({
 
     const chartConfig = {
       backgroundGradientFrom: '#ffffff',
-      backgroundGradientTo: paramModal.color,
-      backgroundGradientFromOpacity: 0.8,
-      backgroundGradientToOpacity: 0.3,
+      backgroundGradientTo: '#ffffff',
+      backgroundGradientFromOpacity: 1,
+      backgroundGradientToOpacity: 1,
       decimalPlaces: 2,
       color: (opacity = 1) => hexToRgba(chartColor, opacity),
       labelColor: (opacity = 1) => hexToRgba('#374151', opacity),
@@ -341,34 +349,39 @@ const WaterQualityParameters: React.FC<Props> = ({
   const getParamValue = (key: ParamKey) => latestParam ? (latestParam[key] || 'N/A') : 'N/A';
   const unit = (param: string) => parameterInfo[param]?.unit || '';
 
-  const parameterCards = [
-    { label: 'Temp',    param: 'Temperature',   key: 'temperature', value: getParamValue('temperature'), icon: '🌡️' },
-    { label: 'pH',      param: 'pH Level',      key: 'pH',          value: getParamValue('pH'),         icon: '🧪' },
-    { label: 'Salinity',param: 'Salinity',      key: 'salinity',    value: getParamValue('salinity'),   icon: '💧' },
-    { label: 'Ammonia', param: 'Ammonia',       key: 'ammonia',     value: getParamValue('ammonia'),    icon: '☣️' },
+  const parameterCards: { label: string; param: string; key: string; value: string; icon: React.ComponentProps<typeof Feather>['name'] }[] = [
+    { label: 'Temp',     param: 'Temperature', key: 'temperature', value: getParamValue('temperature'), icon: 'thermometer' },
+    { label: 'pH',       param: 'pH Level',    key: 'pH',          value: getParamValue('pH'),          icon: 'activity' },
+    { label: 'Salinity', param: 'Salinity',    key: 'salinity',    value: getParamValue('salinity'),    icon: 'droplet' },
+    { label: 'Ammonia',  param: 'Ammonia',     key: 'ammonia',     value: getParamValue('ammonia'),     icon: 'wind' },
   ];
 
   return (
     <>
       <Text style={styles.parametersTitle}>Water Quality Parameters</Text>
       <View style={styles.parameterGrid}>
-        {parameterCards.map(({ label, param, key, value, icon }) => (
-          <TouchableOpacity
-            key={param}
-            style={[styles.parameterCard, { backgroundColor: parameterInfo[param].color, borderWidth: 1, borderColor: parameterInfo[param].chartColor }]}
-            onPress={() => key ? handleParamPress(param, value, key as ParamKey, pond.pond_name) : showParameterModal(param, value)}
-            accessible
-            accessibilityLabel={`${param}: ${value}`}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-          >
-            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <Text style={styles.paramIcon}>{icon}</Text>
-              <Text style={styles.parameterLabel}>{label}</Text>
-              <Text style={styles.parameterValue}>{value ? `${value}${unit(param)}` : value}</Text>
-            </Animated.View>
-          </TouchableOpacity>
-        ))}
+        {parameterCards.map(({ label, param, key, value, icon }) => {
+          const info = parameterInfo[param];
+          return (
+            <TouchableOpacity
+              key={param}
+              style={[styles.parameterCard, { backgroundColor: info.color, borderColor: info.accentColor + '40' }]}
+              onPress={() => key ? handleParamPress(param, value, key as ParamKey, pond.pond_name) : showParameterModal(param, value)}
+              accessible
+              accessibilityLabel={`${param}: ${value}`}
+              onPressIn={handlePressIn}
+              onPressOut={handlePressOut}
+            >
+              <Animated.View style={{ alignItems: 'center', transform: [{ scale: scaleAnim }] }}>
+                <View style={[styles.paramIconCircle, { backgroundColor: info.accentColor + '18', borderColor: info.accentColor + '30' }]}>
+                  <Feather name={icon} size={18} color={info.accentColor} />
+                </View>
+                <Text style={styles.parameterLabel}>{label}</Text>
+                <Text style={[styles.parameterValue, { color: info.accentColor }]}>{value ? `${value}${unit(param)}` : value}</Text>
+              </Animated.View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <Modal visible={paramModal.visible} animationType="slide" transparent>
@@ -405,7 +418,7 @@ const WaterQualityParameters: React.FC<Props> = ({
               bounces={false}
             >
               <View style={styles.paramValueContainer}>
-                <Text style={styles.paramValue}>{paramModal.value}</Text>
+                <Text style={[styles.paramValue, { color: paramModal.accentColor }]}>{paramModal.value}</Text>
               </View>
               <Text style={styles.paramDescription}>{paramModal.description}</Text>
               {historyLoading ? (
@@ -423,43 +436,52 @@ const WaterQualityParameters: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   parametersTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 16,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   parameterGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-evenly',
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 8,
   },
   parameterCard: {
     borderRadius: 16,
-    padding: 16,
-    margin: 2,
+    padding: 14,
     flexBasis: '48%',
     alignItems: 'center',
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  paramIcon: {
-    fontSize: 28,
-    marginBottom: 6,
+  paramIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
   },
   parameterLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-    marginBottom: 4,
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontWeight: '600',
+    marginBottom: 3,
     textAlign: 'center',
+    letterSpacing: 0.4,
   },
   parameterValue: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     textAlign: 'center',
   },
   modalOverlay: {
@@ -487,8 +509,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#BFDBFE',
+    borderBottomColor: '#F0EDE8',
+    backgroundColor: '#FFFFFF',
   },
   headerActionsLeft: {
     flexDirection: 'row',
@@ -582,16 +604,16 @@ const styles = StyleSheet.create({
   tooltip: {
     position: 'absolute',
     zIndex: 10,
-    backgroundColor: '#BFDBFE',
-    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
     elevation: 4,
     maxWidth: 200,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: '#E5E7EB',
   },
   tooltipContent: {
     paddingHorizontal: 12,

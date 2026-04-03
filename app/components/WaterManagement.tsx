@@ -432,6 +432,50 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
               renderItem={renderAction}
               ListEmptyComponent={<Text style={styles.emptyText}>No past refill actions found.</Text>}
               contentContainerStyle={{ padding: 20 }}
+              ListHeaderComponent={() => {
+                const histData = allWaterActions.filter((r) => !['pending', 'in_progress'].includes(r.action_status));
+                if (histData.length === 0) return null;
+                const completed = histData.filter((r) => r.action_status === 'completed').length;
+                const failed = histData.filter((r) => ['failed', 'canceled'].includes(r.action_status)).length;
+                const timelineItems = histData.slice(0, 10);
+                return (
+                  <View style={histStyles.summaryContainer}>
+                    <Text style={histStyles.summaryTitle}>Summary</Text>
+                    <View style={histStyles.statsRow}>
+                      <View style={histStyles.statBox}>
+                        <Text style={histStyles.statValue}>{histData.length}</Text>
+                        <Text style={histStyles.statLabel}>Total</Text>
+                      </View>
+                      <View style={histStyles.statBox}>
+                        <Text style={[histStyles.statValue, { color: '#22C55E' }]}>{completed}</Text>
+                        <Text style={histStyles.statLabel}>Completed</Text>
+                      </View>
+                      <View style={histStyles.statBox}>
+                        <Text style={[histStyles.statValue, { color: '#EF4444' }]}>{failed}</Text>
+                        <Text style={histStyles.statLabel}>Failed/Canceled</Text>
+                      </View>
+                    </View>
+                    <Text style={[histStyles.summaryTitle, { marginTop: 16 }]}>Recent Activity</Text>
+                    {timelineItems.map((r, idx) => {
+                      const color = getStatusColor(r.action_status);
+                      const label = formatDateTime(r.scheduled_timestamp);
+                      const statusText = getStatusText(r.action_status);
+                      return (
+                        <View key={r.wm_id} style={histStyles.timelineRow}>
+                          <View style={[histStyles.timelineDot, { backgroundColor: color }]} />
+                          {idx < timelineItems.length - 1 && <View style={histStyles.timelineLine} />}
+                          <View style={histStyles.timelineContent}>
+                            <Text style={histStyles.timelineDate}>{label}</Text>
+                            <View style={[histStyles.timelineBadge, { backgroundColor: color + '22' }]}>
+                              <Text style={[histStyles.timelineBadgeText, { color }]}>{statusText}</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              }}
             />
           </View>
         </View>
@@ -448,70 +492,85 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   card: {
-    backgroundColor: '#fefaf4',
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     maxHeight: '88%',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 12,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fef3c7',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#fcd34d44',
+    borderBottomColor: '#F3F0EB',
   },
   title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#92400e',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginTop: 4,
-  },
-  closeBtn: {
-    padding: 18,
-  },
-  closeTxt: {
-    fontSize: 24,
-    color: '#6b7280',
-  },
-  section: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#92400e',
+    color: '#1F2937',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  closeTxt: {
+    fontSize: 18,
+    color: '#6B7280',
+    lineHeight: 22,
+  },
+  section: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#9CA3AF',
     marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   actionCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#FAFAF8',
     borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
+    padding: 16,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#F0EDE8',
   },
   activeCard: {
-    borderColor: '#fcd34d',
-    backgroundColor: '#fffbeb',
+    borderColor: '#FBBF24',
+    backgroundColor: '#FFFBEB',
   },
   actionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   dateLarge: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#92400e',
+    color: '#1F2937',
     flex: 1,
     paddingRight: 12,
   },
@@ -521,104 +580,199 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   label: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#92400e',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   tag: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
   tagText: {
     color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cancelBtn: {
-    backgroundColor: '#fee2e2',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: '#FECACA',
   },
   cancelTxt: {
-    color: '#dc2626',
+    color: '#DC2626',
     fontWeight: '600',
+    fontSize: 13,
   },
   addBtn: {
-    backgroundColor: '#f97316',
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: '#FF8C00',
+    paddingVertical: 15,
+    borderRadius: 14,
     alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: 12,
+    shadowColor: '#FF8C00',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   addTxt: {
     color: 'white',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   historyLink: {
-    color: '#2563eb',
+    color: '#FF8C00',
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 14,
   },
   field: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
     padding: 14,
-    fontSize: 16,
-    backgroundColor: '#f9fafb',
+    fontSize: 15,
+    backgroundColor: '#F9FAFB',
+    color: '#1F2937',
   },
   readonlyValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#1f2937',
+    color: '#1F2937',
     padding: 14,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: '#E5E7EB',
   },
   footer: {
     flexDirection: 'row',
-    padding: 20,
-    gap: 12,
+    padding: 16,
+    gap: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    backgroundColor: '#fef3c7',
+    borderTopColor: '#F3F0EB',
+    backgroundColor: '#FFFFFF',
   },
   btn: {
     flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 15,
+    borderRadius: 14,
     alignItems: 'center',
   },
   btnCancel: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: '#F3F4F6',
   },
   btnSave: {
-    backgroundColor: '#f97316',
+    backgroundColor: '#FF8C00',
   },
   btnTxt: {
     color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
   },
   btnTxtCancel: {
-    color: '#4b5563',
+    color: '#6B7280',
     fontWeight: '600',
   },
   emptyText: {
-    color: '#6b7280',
+    color: '#9CA3AF',
     textAlign: 'center',
     paddingVertical: 40,
-    fontSize: 15,
+    fontSize: 14,
+  },
+});
+
+const histStyles = StyleSheet.create({
+  summaryContainer: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  summaryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statBox: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 10,
+    marginHorizontal: 3,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+    position: 'relative',
+  },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 3,
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  timelineLine: {
+    position: 'absolute',
+    left: 5,
+    top: 15,
+    width: 2,
+    height: 20,
+    backgroundColor: '#e5e7eb',
+  },
+  timelineContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  timelineDate: {
+    fontSize: 12,
+    color: '#374151',
+    flex: 1,
+  },
+  timelineBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  timelineBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
 

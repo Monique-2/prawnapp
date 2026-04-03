@@ -1,5 +1,6 @@
 // app/index.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import { Feather } from '@expo/vector-icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +18,7 @@ import {
 
 import AddPond from './components/AddPond';
 import FeedingManagementAction from './components/FeedingManagementAction';
+import NotificationsPanel from './components/NotificationsPanel';
 import WaterManagement from './components/WaterManagement';
 import WaterQualityParameters from './components/WaterQualityParameters';
 
@@ -80,6 +82,15 @@ export interface WaterManagementRecord {
   updated_at: string;
 }
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'feeding' | 'water' | 'pond' | 'alert';
+  timestamp: string;
+  read: boolean;
+}
+
 export default function HomeScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
@@ -114,9 +125,35 @@ export default function HomeScreen() {
 
   // Notification modal state
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+
+  const markNotificationRead = (id: string) => {
+    setReadIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  const deleteNotification = (id: string) => {
+    setDeletedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  // Ticks every minute so water-change reminders stay accurate
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const screenWidth = Dimensions.get('window').width;
-  const BASE_URL = 'http://192.168.1.19/smartprawnapp/backend/';
+  const BASE_URL = 'http://192.168.1.13/backend/';;
   const PONDS_URL = `${BASE_URL}ponds.php`;
   const FEEDING_URL = `${BASE_URL}management/feeding_management_action.php`;
   const WATER_URL = `${BASE_URL}management/water_management_action.php`;
@@ -291,7 +328,7 @@ export default function HomeScreen() {
         const sortedPonds = data.data.sort((a: Pond, b: Pond) => {
           const aNum = parseInt(a.pond_name.split('-')[1] || '0', 10);
           const bNum = parseInt(b.pond_name.split('-')[1] || '0', 10);
-          return bNum - aNum;
+          return aNum - bNum;
         });
         setPonds(sortedPonds);
         setPondName(generatePondName());
@@ -340,7 +377,235 @@ export default function HomeScreen() {
     fetchAllWaterActions();
   };
 
- 
+  // Derive notifications from existing data — no extra fetch needed
+  const notifications: AppNotification[] = useMemo(() => {
+    const items: AppNotification[] = [];
+
+    // ─── Water quality parameter alerts ──────────────────────────────────────
+    ponds.forEach((pond) => {
+      const param = parameters[pond.pond_name];
+      if (!param) return;
+
+      const temp     = parseFloat(param.temperature);
+      const ph       = parseFloat(param.pH);
+      const ammonia  = parseFloat(param.ammonia);
+      const salinity = parseFloat(param.salinity);
+
+      if (!isNaN(temp) && (temp <= 24 || temp >= 31)) {
+        const nid = `alert-temp-${pond.id}-${param.updated_at}`;
+        items.push({
+          id: nid,
+          title: '🌡️ Temperature Alert',
+          message: `${pond.pond_name}: Temperature is ${temp}°C — outside safe range (25–30°C).`,
+          type: 'alert',
+          timestamp: param.updated_at,
+          read: readIds.has(nid),
+        });
+      }
+
+      if (!isNaN(ph) && (ph <= 7.28 || ph >= 7.81)) {
+        const nid = `alert-ph-${pond.id}-${param.updated_at}`;
+        items.push({
+          id: nid,
+          title: '🧪 pH Alert',
+          message: `${pond.pond_name}: pH is ${ph} — outside safe range (7.29–7.80).`,
+          type: 'alert',
+          timestamp: param.updated_at,
+          read: readIds.has(nid),
+        });
+      }
+
+      if (!isNaN(ammonia) && ammonia > 0.1) {
+        const nid = `alert-ammonia-${pond.id}-${param.updated_at}`;
+        items.push({
+          id: nid,
+          title: '☣️ Ammonia Alert',
+          message: `${pond.pond_name}: Ammonia is ${ammonia} ppm — above safe limit of 0.1 ppm.`,
+          type: 'alert',
+          timestamp: param.updated_at,
+          read: readIds.has(nid),
+        });
+      }
+
+      if (!isNaN(salinity) && (salinity < 20 || salinity > 30)) {
+        const nid = `alert-salinity-${pond.id}-${param.updated_at}`;
+        items.push({
+          id: nid,
+          title: '🌊 Salinity Alert',
+          message: `${pond.pond_name}: Salinity is ${salinity} ppt — outside safe range (20–30 ppt).`,
+          type: 'alert',
+          timestamp: param.updated_at,
+          read: readIds.has(nid),
+        });
+      }
+    });
+
+    // ─── Water change reminders (1 hour before scheduled time) ───────────────
+    allWaterActions
+      .filter((w) => w.action_status === 'pending')
+      .forEach((w) => {
+        const scheduledTime = new Date(w.scheduled_timestamp);
+        const msUntil = scheduledTime.getTime() - now.getTime();
+        const oneHour = 60 * 60 * 1000;
+        if (msUntil > 0 && msUntil <= oneHour) {
+          const minutesLeft = Math.round(msUntil / 60_000);
+          const pond = ponds.find((p) => parseInt(p.id) === w.pond_id);
+          const pondLabel = pond ? pond.pond_name : `Pond #${w.pond_id}`;
+          const nid = `water-remind-${w.wm_id}`;
+          items.push({
+            id: nid,
+            title: '💧 Water Change Reminder',
+            message: `${pondLabel}: Water refill scheduled in ${minutesLeft} minute${minutesLeft !== 1 ? 's' : ''}.`,
+            type: 'water',
+            timestamp: w.scheduled_timestamp,
+            read: readIds.has(nid),
+          });
+        }
+      });
+
+    // ─── Completed feedings (within last 24 hours) ────────────────────────────
+    const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
+    allFeedings
+      .filter((f) => f.status === 'completed' && new Date(f.updated_at).getTime() >= oneDayAgo)
+      .slice(0, 10)
+      .forEach((f) => {
+        const pond = ponds.find((p) => parseInt(p.id) === f.pond_id);
+        const pondLabel = pond ? pond.pond_name : `Pond #${f.pond_id}`;
+        const nid = `feeding-done-${f.id}`;
+        const timeStr = new Date(f.updated_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        items.push({
+          id: nid,
+          title: '✅ Feeding Done',
+          message: `${pondLabel}: Feeding completed at ${timeStr} — ${Number(f.amount_of_feed).toFixed(2)} ${f.feed_unit.toUpperCase()}.`,
+          type: 'feeding',
+          timestamp: f.updated_at,
+          read: readIds.has(nid),
+        });
+      });
+
+    // ─── Missed feedings (pending but scheduled time already passed) ──────────
+    allFeedings
+      .filter((f) => {
+        if (f.status !== 'pending') return false;
+        // FeedingRecord uses `feeding_schedule` (date) + `time_schedule` (time)
+        const scheduledAt = new Date(`${f.feeding_schedule}T${f.time_schedule}`);
+        if (isNaN(scheduledAt.getTime())) return false;
+        return scheduledAt < now;
+      })
+      .slice(0, 5)
+      .forEach((f) => {
+        const pond = ponds.find((p) => parseInt(p.id) === f.pond_id);
+        const pondLabel = pond ? pond.pond_name : `Pond #${f.pond_id}`;
+        const nid = `feeding-missed-${f.id}`;
+        const scheduledAt = new Date(`${f.feeding_schedule}T${f.time_schedule}`);
+        const timeStr = scheduledAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        items.push({
+          id: nid,
+          title: '⚠️ Feeding Not Done',
+          message: `${pondLabel}: Feeding scheduled at ${timeStr} was not completed.`,
+          type: 'feeding',
+          timestamp: scheduledAt.toISOString(),
+          read: readIds.has(nid),
+        });
+      });
+
+    // ─── Failed or AI-canceled feedings ──────────────────────────────────────
+    allFeedings
+      .filter((f) => ['failed', 'canceled_by_ai'].includes(f.status))
+      .slice(0, 5)
+      .forEach((f) => {
+        const pond = ponds.find((p) => parseInt(p.id) === f.pond_id);
+        const pondLabel = pond ? pond.pond_name : `Pond #${f.pond_id}`;
+        const nid = `feeding-${f.id}`;
+        items.push({
+          id: nid,
+          title: f.status === 'failed' ? '❌ Feeding Failed' : '🤖 Feeding Canceled by AI',
+          message: `${pondLabel}: ${getStatusDisplay(f.status)} — ${Number(f.amount_of_feed).toFixed(2)} ${f.feed_unit.toUpperCase()}.`,
+          type: 'feeding',
+          timestamp: f.updated_at,
+          read: readIds.has(nid),
+        });
+      });
+
+    // ─── Completed water actions (within last 24 hours) ──────────────────────
+    allWaterActions
+      .filter((w) => w.action_status === 'completed' && new Date(w.updated_at).getTime() >= oneDayAgo)
+      .slice(0, 5)
+      .forEach((w) => {
+        const pond = ponds.find((p) => parseInt(p.id) === w.pond_id);
+        const pondLabel = pond ? pond.pond_name : `Pond #${w.pond_id}`;
+        const nid = `water-done-${w.wm_id}`;
+        const timeStr = new Date(w.updated_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        items.push({
+          id: nid,
+          title: '✅ Water Change Done',
+          message: `${pondLabel}: Refill completed at ${timeStr}.`,
+          type: 'water',
+          timestamp: w.updated_at,
+          read: readIds.has(nid),
+        });
+      });
+
+    // ─── Missed water changes (pending but scheduled time already passed) ─────
+    allWaterActions
+      .filter((w) => {
+        if (!['pending', 'in_progress'].includes(w.action_status)) return false;
+        return new Date(w.scheduled_timestamp) < now;
+      })
+      .slice(0, 5)
+      .forEach((w) => {
+        const pond = ponds.find((p) => parseInt(p.id) === w.pond_id);
+        const pondLabel = pond ? pond.pond_name : `Pond #${w.pond_id}`;
+        const nid = `water-missed-${w.wm_id}`;
+        const timeStr = new Date(w.scheduled_timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        items.push({
+          id: nid,
+          title: '⚠️ Water Change Not Done',
+          message: `${pondLabel}: Refill scheduled at ${timeStr} was not completed.`,
+          type: 'water',
+          timestamp: w.scheduled_timestamp,
+          read: readIds.has(nid),
+        });
+      });
+
+    // ─── Failed water actions ─────────────────────────────────────────────────
+    allWaterActions
+      .filter((w) => w.action_status === 'failed')
+      .slice(0, 5)
+      .forEach((w) => {
+        const pond = ponds.find((p) => parseInt(p.id) === w.pond_id);
+        const pondLabel = pond ? pond.pond_name : `Pond #${w.pond_id}`;
+        const nid = `water-${w.wm_id}`;
+        items.push({
+          id: nid,
+          title: '❌ Water Action Failed',
+          message: `${pondLabel}: Scheduled refill could not be completed.`,
+          type: 'water',
+          timestamp: w.updated_at,
+          read: readIds.has(nid),
+        });
+      });
+
+    // ─── Ponds with critical / alert statuses ────────────────────────────────
+    ponds
+      .filter((p) => ['critical', 'feeding_alert', 'water_alert'].includes(p.status || ''))
+      .forEach((p) => {
+        const nid = `pond-${p.id}`;
+        items.push({
+          id: nid,
+          title: 'Pond Status Alert',
+          message: `${p.pond_name} is in ${getStatusInfo(p.status!).display} status`,
+          type: 'alert',
+          timestamp: p.updated_at || p.created_at,
+          read: readIds.has(nid),
+        });
+      });
+
+    return items
+      .filter((item) => !deletedIds.has(item.id))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [allFeedings, allWaterActions, ponds, parameters, now, readIds, deletedIds]);
+
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
     fetchPonds();
@@ -405,8 +670,8 @@ export default function HomeScreen() {
 
     const latestWaterStatus = getLatestWaterStatus(item.id);
     const managementCards = [
-      { label: 'Water', value: latestWaterStatus, icon: '💧', onPress: () => openWaterModal(item) },
-      { label: 'Feeding', value: getLatestFeedingStatus(), icon: '🍚', onPress: () => openFeedingModal(item) },
+      { label: 'Water', value: latestWaterStatus, icon: 'droplet' as const, onPress: () => openWaterModal(item) },
+      { label: 'Feeding', value: getLatestFeedingStatus(), icon: 'package' as const, onPress: () => openFeedingModal(item) },
     ];
 
     const statusInfo = getStatusInfo(item.status || 'new');
@@ -429,7 +694,7 @@ export default function HomeScreen() {
               onPressOut={handlePressOut}
             >
               <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-                <Text style={styles.deleteButtonText}>🗑️</Text>
+                <Feather name="trash-2" size={16} color="#DC2626" />
               </Animated.View>
             </TouchableOpacity>
             <View style={[styles.statusBadge, { backgroundColor: statusInfo.color }]}>
@@ -453,10 +718,12 @@ export default function HomeScreen() {
           {managementCards.map(({ label, value, icon, onPress }) => (
             <TouchableOpacity
               key={label}
-              style={[styles.managementCard, { backgroundColor: parameterInfo[label as 'Water' | 'Feeding'].color }]}
+              style={styles.managementCard}
               onPress={onPress}
             >
-              <Text style={styles.paramIcon}>{icon}</Text>
+              <View style={styles.paramIconCircle}>
+                <Feather name={icon} size={20} color="#FF8C00" />
+              </View>
               <Text style={styles.managementLabel}>{label}</Text>
               <Text style={styles.managementValue} numberOfLines={2}>
                 {value}
@@ -484,6 +751,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.iconsContainer}>
+          {/* Bell icon with notification badge */}
           <TouchableOpacity
             style={styles.iconButton}
             onPress={openNotifications}
@@ -491,32 +759,33 @@ export default function HomeScreen() {
             onPressOut={handlePressOut}
           >
             <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <Image
-                source={require('../assets/images/notification_bell.png')}
-                style={styles.icon}
-                resizeMode="contain"
-              />
+              <View>
+                <Feather name="bell" size={22} color="#374151" />
+                {notifications.filter((n) => !n.read).length > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {notifications.filter((n) => !n.read).length > 9 ? '9+' : notifications.filter((n) => !n.read).length}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </Animated.View>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.iconButton} onPressIn={handlePressIn} onPressOut={handlePressOut}>
             <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <Image
-                source={require('../assets/images/user_icon.png')}
-                style={styles.icon}
-                resizeMode="contain"
-              />
+              <Feather name="user" size={22} color="#374151" />
             </Animated.View>
           </TouchableOpacity>
         </View>
       </View>
 
       <View style={styles.summaryContainer}>
-        <View style={[styles.summaryCard, { backgroundColor: '#BFDBFE', borderWidth: 1, borderColor: '#FF8C00' }]}>
+        <View style={[styles.summaryCard, { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#DBEAFE' }]}>
           <Text style={styles.summaryTitle}>Total Ponds</Text>
           <Text style={styles.summaryValue}>{ponds.length}</Text>
         </View>
-        <View style={[styles.summaryCard, { backgroundColor: '#FFF7E6', borderWidth: 1, borderColor: '#FF8C00' }]}>
+        <View style={[styles.summaryCard, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FDDBB0' }]}>
           <Text style={styles.summaryTitle}>Total Prawns</Text>
           <Text style={styles.summaryValue}>
             {ponds.reduce((sum, pond) => sum + parseInt(pond.num_prawns || '0'), 0)}
@@ -602,102 +871,150 @@ export default function HomeScreen() {
         onRefreshAllWaterActions={fetchAllWaterActions}
       />
 
-    
+      <NotificationsPanel
+        visible={notificationsVisible}
+        onClose={() => setNotificationsVisible(false)}
+        notifications={notifications}
+        onMarkRead={markNotificationRead}
+        onDelete={deleteNotification}
+      />
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF7E6' },
+  container: { flex: 1, backgroundColor: '#F8F5F0' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 30,
-    backgroundColor: '#FFE4B5',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingTop: 48,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0EDE8',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    elevation: 4,
-  },
-  logoContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  logo: { width: 50, height: 50, marginRight: 12 },
-  titleContainer: { justifyContent: 'center', flexShrink: 1 },
-  mainTitle: { fontSize: 21, fontWeight: '700', color: '#FF8C00', letterSpacing: 0.5 },
-  subTitle: { fontSize: 14, color: '#6B7280', fontWeight: '500', marginTop: 2 },
-  iconsContainer: { flexDirection: 'row', alignItems: 'center' },
-  iconButton: { marginLeft: 8, padding: 8, borderRadius: 8 },
-  icon: { width: 28, height: 28 },
-  summaryContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    marginTop: 20,
-    marginBottom: 16,
-  },
-  summaryCard: {
-    flex: 0.48,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
     elevation: 3,
   },
-  summaryTitle: { fontSize: 14, color: '#374151', fontWeight: '600', textAlign: 'center' },
-  summaryValue: { fontSize: 24, fontWeight: '700', color: '#FF8C00', marginTop: 4 },
-  pondList: { flex: 1, paddingHorizontal: 16 },
-  pondCard: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 24,
-    marginVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  pondHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  pondInfo: { flex: 1 },
-  pondId: { fontSize: 20, fontWeight: '700', color: '#1F2937', marginBottom: 4 },
-  pondDetails: { fontSize: 14, color: '#6B7280', marginBottom: 2 },
-  pondLocation: { fontSize: 14, color: '#9CA3AF' },
-  headerActions: { flexDirection: 'column', alignItems: 'flex-end', gap: 8 },
-  deleteButton: { padding: 8, borderRadius: 8, backgroundColor: '#FEE2E2' },
-  deleteButtonText: { fontSize: 16, color: '#DC2626' },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  logoContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  logo: { width: 40, height: 40, marginRight: 10 },
+  titleContainer: { justifyContent: 'center', flexShrink: 1 },
+  mainTitle: { fontSize: 18, fontWeight: '700', color: '#FF8C00', letterSpacing: 0.3 },
+  subTitle: { fontSize: 12, color: '#9CA3AF', fontWeight: '500', marginTop: 1 },
+  iconsContainer: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  iconButton: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    minWidth: 80,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  statusText: { fontSize: 12, fontWeight: '600', color: '#FFFFFF' },
-  managementTitle: { fontSize: 16, fontWeight: '600', color: '#1F2937', marginBottom: 16 },
-  managementGrid: { flexDirection: 'row', justifyContent: 'space-evenly', marginBottom: 20 },
-  managementCard: {
+  badge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#EF4444',
+    borderRadius: 7,
+    minWidth: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: { fontSize: 9, color: '#FFF', fontWeight: '700' },
+  summaryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 12,
+    gap: 12,
+  },
+  summaryCard: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
     borderRadius: 16,
-    padding: 16,
-    flex: 0.48,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
     elevation: 2,
-    borderWidth: 1,
-    borderColor: '#FF8C00',
   },
-  paramIcon: { fontSize: 28, marginBottom: 6 },
-  managementLabel: { fontSize: 12, color: '#6B7280', fontWeight: '500', marginBottom: 4 },
-  managementValue: { fontSize: 15, fontWeight: '600', color: '#1F2937', textAlign: 'center' },
-  emptyText: { fontSize: 16, color: '#6B7280', textAlign: 'center', marginTop: 48, fontWeight: '500' },
-  fabContainer: { position: 'absolute', bottom: 24, right: 24, zIndex: 1000 },
+  summaryTitle: { fontSize: 12, color: '#6B7280', fontWeight: '600', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryValue: { fontSize: 28, fontWeight: '800', color: '#FF8C00', marginTop: 4 },
+  pondList: { flex: 1, paddingHorizontal: 16 },
+  pondCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    marginVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F3F0EB',
+  },
+  pondHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  pondInfo: { flex: 1 },
+  pondId: { fontSize: 18, fontWeight: '700', color: '#1F2937', marginBottom: 3 },
+  pondDetails: { fontSize: 13, color: '#6B7280', marginBottom: 2 },
+  pondLocation: { fontSize: 12, color: '#9CA3AF' },
+  headerActions: { flexDirection: 'column', alignItems: 'flex-end', gap: 8 },
+  deleteButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteButtonText: { fontSize: 16, color: '#DC2626' },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    minWidth: 72,
+    alignItems: 'center',
+  },
+  statusText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
+  managementTitle: { fontSize: 13, fontWeight: '700', color: '#9CA3AF', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  managementGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
+  managementCard: {
+    borderRadius: 16,
+    padding: 14,
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#FAFAF8',
+    borderWidth: 1,
+    borderColor: '#F0EDE8',
+  },
+  paramIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFF4E6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#FDDBB0',
+  },
+  managementLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.4 },
+  managementValue: { fontSize: 13, fontWeight: '600', color: '#374151', textAlign: 'center' },
+  emptyText: { fontSize: 15, color: '#9CA3AF', textAlign: 'center', marginTop: 48, fontWeight: '500' },
+  fabContainer: { position: 'absolute', bottom: 28, right: 24, zIndex: 1000 },
   plusCircle: {
     width: 56,
     height: 56,
@@ -705,12 +1022,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF8C00',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#FF8C00',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 5,
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  plusText: { fontSize: 32, color: '#FFFFFF', fontWeight: '700' },
+  plusText: { fontSize: 32, color: '#FFFFFF', fontWeight: '300', lineHeight: 36 },
   loadingIndicator: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });

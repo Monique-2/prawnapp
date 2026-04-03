@@ -1,13 +1,13 @@
 -- ============================================
 -- DATABASE: prawnapp
 -- ============================================
-CREATE DATABASE IF NOT EXISTS prawnapp;
+CREATE DATABASE prawnapp;
 USE prawnapp;
 
 -- ============================================
 -- 1. PONDS TABLE
 -- ============================================
-CREATE TABLE  IF NOT EXISTS `ponds` (
+CREATE TABLE `ponds` (
     `id` INT(11) NOT NULL AUTO_INCREMENT,
     `pond_name` VARCHAR(50) COLLATE utf8mb4_general_ci NOT NULL,
     `status` ENUM(
