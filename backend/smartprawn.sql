@@ -9,7 +9,7 @@ CREATE TABLE `ponds` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
   `pond_name` VARCHAR(50) COLLATE utf8mb4_general_ci NOT NULL,
   `status` ENUM(
-        'new','active','good','moderate','critical',
+        'new','active','good','moderate','critical',pp
         'under_maintenance','inactive','harvested',
         'feeding_alert','water_alert'
    ) COLLATE utf8mb4_general_ci DEFAULT 'new',

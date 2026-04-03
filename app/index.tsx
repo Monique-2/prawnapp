@@ -4,22 +4,21 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Dimensions,
   FlatList,
   Image,
   RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
-
 
 import AddPond from './components/AddPond';
 import FeedingManagementAction from './components/FeedingManagementAction';
 import WaterManagement from './components/WaterManagement';
 import WaterQualityParameters from './components/WaterQualityParameters';
 
+// ==================== INTERFACES ====================
 export interface Pond {
   id: string;
   pond_name: string;
@@ -32,16 +31,11 @@ export interface Pond {
   updated_at?: string;
 }
 
-export interface PostResponse {
-  success: boolean;
-  message: string;
-}
-
 export interface ParameterRecord {
   id: number;
   pond_id: number;
   temperature: string;
-  dissolved_oxygen: string;
+  dissolved_oxygen?: string;
   pH: string;
   salinity: string;
   ammonia: string;
@@ -49,51 +43,47 @@ export interface ParameterRecord {
   pond_code: string;
 }
 
-export interface ParameterInfo {
-  description: string;
-  color: string;
-  unit: string;
-}
-
 export interface FeedingRecord {
-  id: number;
+  fm_id?: number;
+  id?: number;
   pond_id: number;
-  feeding_schedule: string;
   amount_of_feed: number;
   feed_unit: 'g' | 'kg';
-  time_schedule: string;
-  status: 'pending' | 'feeding' | 'completed' | 'canceled_by_user' | 'canceled_by_ai' | 'failed';
-  feeding_mode: 'ai mode' | 'manual mode';
+  action_status: string;
+  control_mode?: string;
   created_at: string;
   updated_at: string;
-  fd_id?: number;
 }
 
 export interface WaterManagementRecord {
   wm_id: number;
   pond_id: number;
-  wd_id?: number;
-  action_type: 'refill';
+  water_quality_parameters_id?: number;
+  action_type: string;
   scheduled_timestamp: string;
-  action_status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  action_status: string;
   created_at: string;
   updated_at: string;
 }
 
+// ==================== MAIN COMPONENT ====================
 export default function HomeScreen() {
+  // ==================== STATE ====================
   const [modalVisible, setModalVisible] = useState(false);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
   const [selectedPondForFeeding, setSelectedPondForFeeding] = useState<Pond | null>(null);
   const [selectedPondForWater, setSelectedPondForWater] = useState<Pond | null>(null);
   const [waterModalVisible, setWaterModalVisible] = useState(false);
+
   const [ponds, setPonds] = useState<Pond[]>([]);
   const [parameters, setParameters] = useState<{ [key: string]: ParameterRecord }>({});
   const [allFeedings, setAllFeedings] = useState<FeedingRecord[]>([]);
   const [allWaterActions, setAllWaterActions] = useState<WaterManagementRecord[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Form states for adding pond
+  // Add Pond Form States
   const [pondSize, setPondSize] = useState('');
   const [numPrawns, setNumPrawns] = useState('');
   const [age, setAge] = useState('');
@@ -112,26 +102,26 @@ export default function HomeScreen() {
   });
   const [markerCoords, setMarkerCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  // Notification modal state
   const [notificationsVisible, setNotificationsVisible] = useState(false);
 
-  const screenWidth = Dimensions.get('window').width;
-  const BASE_URL = 'http://192.168.1.19/smartprawnapp/backend/';
+  // ==================== CONSTANTS & REFS ====================
+  const BASE_URL = 'http://136.112.99.103/';
   const PONDS_URL = `${BASE_URL}ponds.php`;
-  const FEEDING_URL = `${BASE_URL}management/feeding_management_action.php`;
-  const WATER_URL = `${BASE_URL}management/water_management_action.php`;
+  const FEEDING_URL = `${BASE_URL}feeding_management_action.php`;
+  const WATER_URL = `${BASE_URL}water_management_action.php`;
+  const PARAMETERS_URL = `${BASE_URL}smart_prawn_paramenters.php`;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const bounceAnim = useRef(new Animated.Value(1)).current;
 
-  const parameterInfo: { [key in 'Water' | 'Feeding']: ParameterInfo } = {
-    Water: { description: 'Volume of reserve water available.', color: '#FFF7E6', unit: 'L' },
-    Feeding: { description: 'Amount of feed provided to prawns.', color: '#FFF7E6', unit: '' },
+  const log = (message: string, data?: any) => {
+    console.log(`[${new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })}] ${message}`, data || '');
   };
 
-  const getStatusInfo = (status: string): { display: string; color: string } => {
-    const statuses = {
+  // ==================== STATUS HELPERS ====================
+  const getStatusInfo = (status: string = 'new'): { display: string; color: string } => {
+    const statuses: Record<string, { display: string; color: string }> = {
       new: { display: 'New', color: '#3B82F6' },
       active: { display: 'Active', color: '#10B981' },
       good: { display: 'Good', color: '#22C55E' },
@@ -143,14 +133,10 @@ export default function HomeScreen() {
       feeding_alert: { display: 'Feeding Alert', color: '#F87171' },
       water_alert: { display: 'Water Alert', color: '#FCA5A5' },
     };
-    return statuses[status as keyof typeof statuses] || { display: status, color: '#EF4444' };
+    return statuses[status] || { display: status, color: '#EF4444' };
   };
 
-  const log = (message: string, data?: any) => {
-    console.log(`[${new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })}] ${message}`, data || '');
-  };
-
-  const getStatusDisplay = (status: FeedingRecord['status']): string =>
+  const getStatusDisplay = (status: string): string =>
     ({
       pending: 'Pending',
       feeding: 'Feeding',
@@ -160,7 +146,7 @@ export default function HomeScreen() {
       failed: 'Failed',
     }[status] || status);
 
-  const getWaterStatusDisplay = (status: WaterManagementRecord['action_status']): string =>
+  const getWaterStatusDisplay = (status: string): string =>
     ({
       pending: 'Pending',
       in_progress: 'In Progress',
@@ -168,39 +154,76 @@ export default function HomeScreen() {
       failed: 'Failed',
     }[status] || status);
 
-  const getLatestWaterStatus = (pondId: string) => {
-    const pondWaterActions = allWaterActions.filter((w) => w.pond_id === parseInt(pondId));
-    if (pondWaterActions.length === 0) return 'No records yet';
-    const latest = pondWaterActions[0];
-    return `${getWaterStatusDisplay(latest.action_status)}: ${latest.action_type}`;
+  // ==================== SAFE JSON FETCH (Handles "Connected successfully") ====================
+  const safeJsonFetch = async (url: string): Promise<any> => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+    let text = (await res.text()).trim();
+
+    log('RAW_RESPONSE', text.substring(0, 300) + (text.length > 300 ? '...' : ''));
+
+    // Remove debug prefix
+    const prefixes = ['Connected successfully', 'Connected successfully\n', 'Connected successfully\r\n', 'Success'];
+    for (const prefix of prefixes) {
+      if (text.startsWith(prefix)) {
+        text = text.slice(prefix.length).trim();
+        break;
+      }
+    }
+
+    // Extract first valid JSON object
+    const jsonStart = text.indexOf('{');
+    if (jsonStart !== -1) {
+      text = text.substring(jsonStart);
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      log('JSON_PARSE_FAILED', text.substring(0, 500));
+      throw error;
+    }
   };
 
-  const generatePondName = () => {
-    const existingNames = new Set(ponds.map((pond) => pond.pond_name));
-    let index = 1;
-    let newPondName = `PND-${String(index).padStart(3, '0')}`;
-    while (existingNames.has(newPondName)) {
-      index++;
-      newPondName = `PND-${String(index).padStart(3, '0')}`;
+  // ==================== DATA FETCHING ====================
+  const fetchPonds = async () => {
+    log('FETCH_PONDS_START');
+    setLoading(true);
+    try {
+      const data = await safeJsonFetch(PONDS_URL);
+      if (data.success && Array.isArray(data.data)) {
+        const sortedPonds = [...data.data].sort((a: Pond, b: Pond) => {
+          const aNum = parseInt(a.pond_name?.split('-')[1] || '0', 10);
+          const bNum = parseInt(b.pond_name?.split('-')[1] || '0', 10);
+          return bNum - aNum;
+        });
+        setPonds(sortedPonds);
+        log('PONDS_LOADED', sortedPonds.length);
+      }
+    } catch (error) {
+      log('FETCH_PONDS_ERROR', error);
+      Alert.alert('Error', 'Could not fetch ponds. Please check network or server.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    return newPondName;
   };
 
   const fetchParameters = async () => {
     log('FETCH_PARAMETERS_START');
     try {
-      const res = await fetch(`${BASE_URL}smart_prawn_paramenters.php`);
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
+      const data = await safeJsonFetch(PARAMETERS_URL);
       if (data.success && Array.isArray(data.data)) {
         const paramMap: { [key: string]: ParameterRecord } = {};
         data.data.forEach((param: ParameterRecord) => {
           const code = param.pond_code;
-          if (!paramMap[code] || new Date(param.updated_at) > new Date(paramMap[code].updated_at)) {
+          if (!paramMap[code] || new Date(param.updated_at) > new Date(paramMap[code]?.updated_at || '')) {
             paramMap[code] = param;
           }
         });
         setParameters(paramMap);
+        log('PARAMETERS_LOADED', Object.keys(paramMap).length);
       }
     } catch (error) {
       log('FETCH_PARAMETERS_ERROR', error);
@@ -210,32 +233,22 @@ export default function HomeScreen() {
   const fetchAllFeedings = async () => {
     log('FETCH_ALL_FEEDINGS_START');
     try {
-      const res = await fetch(FEEDING_URL);
-      if (!res.ok) {
-        if (res.status === 404) {
-          setAllFeedings([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        const sorted = data.data
-          .map((record: any) => ({
-            ...record,
-            feed_unit: record.feed_unit || 'g',
-            amount_of_feed:
-              typeof record.amount_of_feed === 'number'
-                ? record.amount_of_feed
-                : parseFloat(record.amount_of_feed || '0') || 0,
-          }))
-          .sort((a: FeedingRecord, b: FeedingRecord) =>
-            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-          );
-        setAllFeedings(sorted);
-      } else {
-        setAllFeedings([]);
-      }
+      const data = await safeJsonFetch(FEEDING_URL);
+      let records: any[] = Array.isArray(data.data) ? data.data : (data.data?.records || []);
+      
+      const processed = records
+        .map((r: any) => ({
+          ...r,
+          pond_id: Number(r.pond_id),
+          amount_of_feed: parseFloat(r.amount_of_feed || '0') || 0,
+          feed_unit: (r.feed_unit || 'g') as 'g' | 'kg',
+          action_status: r.action_status || r.status || 'pending',
+          control_mode: r.control_mode || r.feeding_mode,
+        }))
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+      setAllFeedings(processed);
+      log('FEEDINGS_LOADED', processed.length);
     } catch (error) {
       log('FETCH_ALL_FEEDINGS_ERROR', error);
       setAllFeedings([]);
@@ -245,20 +258,13 @@ export default function HomeScreen() {
   const fetchAllWaterActions = async () => {
     log('FETCH_ALL_WATER_ACTIONS_START');
     try {
-      const res = await fetch(WATER_URL);
-      if (!res.ok) {
-        if (res.status === 404) {
-          setAllWaterActions([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const data = await res.json();
+      const data = await safeJsonFetch(WATER_URL);
       if (data.success && Array.isArray(data.data)) {
-        const sorted = data.data.sort((a: WaterManagementRecord, b: WaterManagementRecord) =>
+        const sorted = [...data.data].sort((a: WaterManagementRecord, b: WaterManagementRecord) =>
           new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
         );
         setAllWaterActions(sorted);
+        log('WATER_ACTIONS_LOADED', sorted.length);
       } else {
         setAllWaterActions([]);
       }
@@ -268,51 +274,12 @@ export default function HomeScreen() {
     }
   };
 
-  const onRefreshFeedingsForPond = async (pondId: string): Promise<void> => {
-    await fetchAllFeedings();
-  };
-
-  const fetchPonds = async () => {
-    log('FETCH_PONDS_START');
-    setLoading(true);
-    try {
-      const res = await fetch(PONDS_URL);
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const text = await res.text();
-      let data: any;
-      try {
-        data = JSON.parse(text);
-      } catch (err) {
-        console.error('JSON parse error:', err);
-        Alert.alert('Error', 'Invalid server response.');
-        return;
-      }
-      if (data.success && Array.isArray(data.data)) {
-        const sortedPonds = data.data.sort((a: Pond, b: Pond) => {
-          const aNum = parseInt(a.pond_name.split('-')[1] || '0', 10);
-          const bNum = parseInt(b.pond_name.split('-')[1] || '0', 10);
-          return bNum - aNum;
-        });
-        setPonds(sortedPonds);
-        setPondName(generatePondName());
-      } else {
-        Alert.alert('Error', data.message || 'Server did not return a valid array.');
-      }
-    } catch (error) {
-      log('FETCH_PONDS_ERROR', error);
-      Alert.alert('Error', 'Could not fetch ponds. Please check your network.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
   const deletePond = async (pondName: string) => {
     try {
-      const res = await fetch(`${PONDS_URL}?pond_name=${pondName}`, { method: 'DELETE' });
-      const data: PostResponse = await res.json();
+      const res = await fetch(`${PONDS_URL}?pond_name=${encodeURIComponent(pondName)}`, { method: 'DELETE' });
+      const data = await res.json();
       if (data.success) {
-        Alert.alert('Success', data.message || 'Pond deleted!');
+        Alert.alert('Success', data.message || 'Pond deleted successfully!');
         fetchPonds();
         fetchParameters();
         fetchAllFeedings();
@@ -340,20 +307,27 @@ export default function HomeScreen() {
     fetchAllWaterActions();
   };
 
- 
-  useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    fetchPonds();
-    fetchParameters();
-    fetchAllFeedings();
-    fetchAllWaterActions();
-    setPondName(generatePondName());
-  }, []);
+  const onRefreshFeedingsForPond = async () => await fetchAllFeedings();
 
-  useEffect(() => {
-    setPondName(generatePondName());
-  }, [ponds]);
+  const getLatestWaterStatus = (pondId: string) => {
+    const pondActions = allWaterActions.filter((w) => w.pond_id === parseInt(pondId));
+    if (pondActions.length === 0) return 'No records yet';
+    const latest = pondActions[0];
+    return `${getWaterStatusDisplay(latest.action_status)}: ${latest.action_type}`;
+  };
 
+  const generatePondName = () => {
+    const existingNames = new Set(ponds.map((p) => p.pond_name));
+    let index = 1;
+    let newName = `PND-${String(index).padStart(3, '0')}`;
+    while (existingNames.has(newName)) {
+      index++;
+      newName = `PND-${String(index).padStart(3, '0')}`;
+    }
+    return newName;
+  };
+
+  // ==================== ANIMATION HANDLERS ====================
   const handlePressIn = () => {
     Animated.spring(scaleAnim, { toValue: 0.95, friction: 5, useNativeDriver: true }).start();
   };
@@ -362,54 +336,36 @@ export default function HomeScreen() {
     Animated.spring(scaleAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();
   };
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(bounceAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
-        Animated.timing(bounceAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  const openFeedingModal = (pond: Pond) => {
-    setSelectedPondForFeeding(pond);
-  };
-
-  const closeFeedingModal = () => {
-    setSelectedPondForFeeding(null);
-  };
-
+  // ==================== MODAL HANDLERS ====================
+  const openFeedingModal = (pond: Pond) => setSelectedPondForFeeding(pond);
+  const closeFeedingModal = () => setSelectedPondForFeeding(null);
   const openWaterModal = (pond: Pond) => {
     setSelectedPondForWater(pond);
     setWaterModalVisible(true);
   };
-
   const closeWaterModal = () => {
     setWaterModalVisible(false);
     setSelectedPondForWater(null);
   };
 
-  const openNotifications = () => {
-    setNotificationsVisible(true);
-  };
-
+  // ==================== RENDER POND ITEM ====================
   const renderPondItem = ({ item }: { item: Pond }) => {
+    const pondFeedings = allFeedings.filter((f) => f.pond_id === parseInt(item.id));
+    const latestFeeding = pondFeedings[0];
+
     const getLatestFeedingStatus = () => {
-      const pondFeedings = allFeedings.filter((f) => f.pond_id === parseInt(item.id));
-      if (pondFeedings.length === 0) return 'No records yet';
-      const latest = pondFeedings[0];
-      const unit = latest.feed_unit || 'g';
-      const amountStr = `${Number(latest.amount_of_feed || 0).toFixed(2)} ${unit.toUpperCase()}`;
-      return `${getStatusDisplay(latest.status)}: ${amountStr}`;
+      if (!latestFeeding) return 'No records yet';
+      const amountStr = `${Number(latestFeeding.amount_of_feed).toFixed(2)} ${latestFeeding.feed_unit.toUpperCase()}`;
+      return `${getStatusDisplay(latestFeeding.action_status)}: ${amountStr}`;
     };
 
     const latestWaterStatus = getLatestWaterStatus(item.id);
+    const statusInfo = getStatusInfo(item.status || 'new');
+
     const managementCards = [
       { label: 'Water', value: latestWaterStatus, icon: '💧', onPress: () => openWaterModal(item) },
       { label: 'Feeding', value: getLatestFeedingStatus(), icon: '🍚', onPress: () => openFeedingModal(item) },
     ];
-
-    const statusInfo = getStatusInfo(item.status || 'new');
 
     return (
       <Animated.View style={[styles.pondCard, { opacity: fadeAnim }]}>
@@ -421,6 +377,7 @@ export default function HomeScreen() {
             </Text>
             <Text style={styles.pondLocation}>Location: {item.location || 'Not specified'}</Text>
           </View>
+
           <View style={styles.headerActions}>
             <TouchableOpacity
               onPress={() => confirmDelete(item.pond_name)}
@@ -453,7 +410,7 @@ export default function HomeScreen() {
           {managementCards.map(({ label, value, icon, onPress }) => (
             <TouchableOpacity
               key={label}
-              style={[styles.managementCard, { backgroundColor: parameterInfo[label as 'Water' | 'Feeding'].color }]}
+              style={[styles.managementCard, { backgroundColor: '#FFF7E6' }]}
               onPress={onPress}
             >
               <Text style={styles.paramIcon}>{icon}</Text>
@@ -468,8 +425,32 @@ export default function HomeScreen() {
     );
   };
 
+  // ==================== EFFECTS ====================
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    fetchPonds();
+    fetchParameters();
+    fetchAllFeedings();
+    fetchAllWaterActions();
+  }, []);
+
+  useEffect(() => {
+    setPondName(generatePondName());
+  }, [ponds]);
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceAnim, { toValue: 1.1, duration: 800, useNativeDriver: true }),
+        Animated.timing(bounceAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  // ==================== RENDER ====================
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoContainer}>
           <Image
@@ -486,31 +467,23 @@ export default function HomeScreen() {
         <View style={styles.iconsContainer}>
           <TouchableOpacity
             style={styles.iconButton}
-            onPress={openNotifications}
+            onPress={() => setNotificationsVisible(true)}
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
           >
             <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <Image
-                source={require('../assets/images/notification_bell.png')}
-                style={styles.icon}
-                resizeMode="contain"
-              />
+              <Image source={require('../assets/images/notification_bell.png')} style={styles.icon} resizeMode="contain" />
             </Animated.View>
           </TouchableOpacity>
-
           <TouchableOpacity style={styles.iconButton} onPressIn={handlePressIn} onPressOut={handlePressOut}>
             <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-              <Image
-                source={require('../assets/images/user_icon.png')}
-                style={styles.icon}
-                resizeMode="contain"
-              />
+              <Image source={require('../assets/images/user_icon.png')} style={styles.icon} resizeMode="contain" />
             </Animated.View>
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Summary Cards */}
       <View style={styles.summaryContainer}>
         <View style={[styles.summaryCard, { backgroundColor: '#BFDBFE', borderWidth: 1, borderColor: '#FF8C00' }]}>
           <Text style={styles.summaryTitle}>Total Ponds</Text>
@@ -524,6 +497,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Pond List */}
       {loading && !refreshing ? (
         <ActivityIndicator size="large" color="#FF8C00" style={styles.loadingIndicator} />
       ) : (
@@ -537,6 +511,7 @@ export default function HomeScreen() {
         />
       )}
 
+      {/* Floating Action Button */}
       <View style={styles.fabContainer}>
         <TouchableOpacity
           style={styles.plusCircle}
@@ -550,6 +525,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Modals */}
       <AddPond
         modalVisible={modalVisible}
         setModalVisible={setModalVisible}
@@ -601,12 +577,11 @@ export default function HomeScreen() {
         allWaterActions={allWaterActions}
         onRefreshAllWaterActions={fetchAllWaterActions}
       />
-
-    
     </View>
   );
 }
 
+// ==================== STYLES ====================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFF7E6' },
   header: {

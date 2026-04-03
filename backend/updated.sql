@@ -1,19 +1,19 @@
 -- ============================================
 -- DATABASE: prawnapp
 -- ============================================
-CREATE DATABASE IF NOT EXISTS prawnapp;
-USE prawnapp;
+CREATE DATABASE thesis;
+USE thesis;
 
 -- ============================================
 -- 1. PONDS TABLE
 -- ============================================
-CREATE TABLE  IF NOT EXISTS `ponds` (
+CREATE TABLE  `ponds` (
     `id` INT(11) NOT NULL AUTO_INCREMENT,
     `pond_name` VARCHAR(50) COLLATE utf8mb4_general_ci NOT NULL,
     `status` ENUM(
         'new','active','good','moderate','critical',
         'under_maintenance','inactive','harvested',
-        'feeding_alert','water_alert'
+        'feeding_alert','water_alert'   
     ) COLLATE utf8mb4_general_ci DEFAULT 'new',
     `pond_size` VARCHAR(50) COLLATE utf8mb4_general_ci NOT NULL,
     `num_prawns` INT(11) NOT NULL,
@@ -115,7 +115,7 @@ CREATE TABLE `water_management_action` (
     
     `water_quality_parameters_id` INT DEFAULT NULL,
 
-    `action_type` ENUM('refill') NOT NULL,
+    `action_type` ENUM('refill from freshwater', 'refill from brackishwater') NOT NULL,
 
     `scheduled_timestamp` DATETIME DEFAULT NULL,
 
@@ -151,50 +151,3 @@ CREATE TABLE `water_management_action` (
   DEFAULT CHARSET=utf8mb4 
   COLLATE=utf8mb4_general_ci;
  
-
-/**CREATE TABLE `water_management_action` (
-    `wm_id` INT NOT NULL AUTO_INCREMENT,
-    
-    `pond_id` INT NOT NULL,
-    
-    `water_quality_parameters_id` INT DEFAULT NULL,
-
-    `action_type` ENUM(
-        'refill',
-        'drain_refill',
-        'monitor'
-    ) NOT NULL,
-
-    `scheduled_timestamp` DATETIME DEFAULT NULL,
-
-    `action_status` ENUM(
-        'pending',
-        'in_progress',
-        'completed',
-        'canceled',
-        'failed'
-    ) DEFAULT 'pending',
-
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP 
-        ON UPDATE CURRENT_TIMESTAMP,
-
-    PRIMARY KEY (`wm_id`),
-
-    KEY `idx_water_quality_parameters_id` (`water_quality_parameters_id`),
-
-    CONSTRAINT `fk_water_management_pond`
-        FOREIGN KEY (`pond_id`)
-        REFERENCES `ponds` (`id`)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE,
-
-    CONSTRAINT `fk_water_action_water_quality`
-        FOREIGN KEY (`water_quality_parameters_id`)
-        REFERENCES `water_quality_parameters` (`id`)
-        ON DELETE SET NULL
-        ON UPDATE CASCADE
-
-) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_general_ci;*/

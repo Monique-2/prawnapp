@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once '../config.php';
+require_once './config.php';
 
 if (!$conn) {
     http_response_code(500);
