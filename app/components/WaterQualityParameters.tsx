@@ -1,15 +1,16 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Dimensions,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 
@@ -77,24 +78,25 @@ const WaterQualityParameters: React.FC<Props> = ({
     description: '',
     color: '#BFDBFE',
   });
+
   const [paramHistory, setParamHistory] = useState<ParameterRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
   const [scrollX, setScrollX] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
+  const scrollRef = useRef<ScrollView>(null);
   const screenWidth = Dimensions.get('window').width;
 
   const waterQualityParams = ['Temperature', 'pH Level', 'Salinity', 'Ammonia'];
 
-  const paramKeyMap: { [key: string]: ParamKey } = {
-    Temperature: 'temperature',
-    'pH Level': 'pH',
-    Salinity: 'salinity',
-    Ammonia: 'ammonia',
-  };
-
-  const parameterInfo: { [key: string]: { description: string; color: string; unit?: string; chartColor: string; idealRange: { min: number; max: number } } } = {
+  const parameterInfo: { [key: string]: { 
+    description: string; 
+    color: string; 
+    unit?: string; 
+    chartColor: string; 
+    idealRange: { min: number; max: number } 
+  }} = {
     Temperature: {
       description: 'Water temperature affects prawn metabolism and growth. Ideal range: 26-30°C.',
       color: '#BFDBFE',
@@ -132,12 +134,14 @@ const WaterQualityParameters: React.FC<Props> = ({
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
 
-  const fetchHistory = async (pondId: string) => {
-    setHistoryLoading(true);
+  const fetchHistory = useCallback(async (pondId: string, showLoading = true) => {
+    if (showLoading) setHistoryLoading(true);
     setTooltipData(null);
+
     try {
-      const res = await fetch(`${BASE_URL}smart_prawn_paramenters.php?pond_name=${pondId}`);
+      const res = await fetch(`${BASE_URL}smart_prawn_parameters.php?pond_name=${pondId}`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
       const data = await res.json();
 
       if (data.success && Array.isArray(data.data)) {
@@ -145,14 +149,18 @@ const WaterQualityParameters: React.FC<Props> = ({
           new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
         );
         setParamHistory(sortedHistory);
+      } else {
+        setParamHistory([]);
       }
     } catch (error) {
       console.error("History fetch error:", error);
       Alert.alert("Error", "Could not fetch parameter history.");
+      setParamHistory([]);
     } finally {
-      setHistoryLoading(false);
+      if (showLoading) setHistoryLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [BASE_URL]);
 
   const showParameterModal = (parameter: string, value: string, paramKey?: ParamKey, pondId?: string) => {
     setParamModal({
@@ -174,13 +182,16 @@ const WaterQualityParameters: React.FC<Props> = ({
     showParameterModal(parameter, value, paramKey, pondId);
   };
 
-  const dismissTooltip = () => {
-    setTooltipData(null);
-  };
+  const dismissTooltip = () => setTooltipData(null);
 
   const dismissOnChartPress = () => {
-    if (tooltipData) {
-      setTooltipData(null);
+    if (tooltipData) dismissTooltip();
+  };
+
+  const onRefresh = () => {
+    if (paramModal.pondId) {
+      setRefreshing(true);
+      fetchHistory(paramModal.pondId, false);
     }
   };
 
@@ -188,39 +199,47 @@ const WaterQualityParameters: React.FC<Props> = ({
     if (!paramModal.paramKey || paramHistory.length === 0) {
       return (
         <View style={styles.emptyChartContainer}>
-          <Text style={styles.emptyChartText}>No historical data available to display.</Text>
+          <Text style={styles.emptyChartText}>No historical data available yet.</Text>
         </View>
       );
     }
 
-    const { chartColor, unit = '', idealRange } = parameterInfo[paramModal.parameter];
-    const dataValues = paramHistory.map(record => parseFloat(record[paramModal.paramKey!] || '0')).filter(val => !isNaN(val));
+    const paramInfo = parameterInfo[paramModal.parameter];
+    const { chartColor, unit = '', idealRange } = paramInfo;
+
+    const dataValues = paramHistory
+      .map(record => parseFloat(record[paramModal.paramKey!] || '0'))
+      .filter(val => !isNaN(val) && isFinite(val));
 
     if (dataValues.length === 0) {
       return (
         <View style={styles.emptyChartContainer}>
-          <Text style={styles.emptyChartText}>No valid data points to display.</Text>
+          <Text style={styles.emptyChartText}>No valid numerical data to plot.</Text>
         </View>
       );
     }
 
-    const average = dataValues.length > 0 ? (dataValues.reduce((a, b) => a + b, 0) / dataValues.length).toFixed(2) : 'N/A';
+    const average = dataValues.length > 0 
+      ? (dataValues.reduce((a, b) => a + b, 0) / dataValues.length).toFixed(2) 
+      : 'N/A';
 
     const minY = Math.min(...dataValues);
     const maxY = Math.max(...dataValues);
-    const rangeY = maxY - minY;
-    const plotHeight = 180; // Approximate plot area height
+    const rangeY = maxY - minY || 1;
 
     const allSameDay = paramHistory.every(record => 
       new Date(record.updated_at).toDateString() === new Date(paramHistory[0].updated_at).toDateString()
     );
 
-    const maxLabels = 10;
-    const labelStep = Math.ceil(paramHistory.length / maxLabels);
+    const maxLabels = 8;
+    const labelStep = Math.max(1, Math.ceil(paramHistory.length / maxLabels));
+
     const labels = paramHistory.map((record, idx) => {
       if (idx % labelStep !== 0) return '';
       const date = new Date(record.updated_at);
-      return allSameDay ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      return allSameDay 
+        ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     });
 
     const chartData = {
@@ -228,38 +247,43 @@ const WaterQualityParameters: React.FC<Props> = ({
       datasets: [{
         data: dataValues,
         color: () => chartColor,
-        strokeWidth: 3
+        strokeWidth: 3,
       }],
     };
 
-    const chartWidth = Math.max(Math.min(screenWidth * 0.85, 450), paramHistory.length * 60);
-    const chartHeight = 280;
+    const minChartWidth = Math.max(screenWidth * 0.9, paramHistory.length * 55);
+    const chartWidth = Math.min(minChartWidth, 800);
+    const chartHeight = 260;
 
     const chartConfig = {
       backgroundGradientFrom: '#ffffff',
       backgroundGradientTo: paramModal.color,
-      backgroundGradientFromOpacity: 0.8,
-      backgroundGradientToOpacity: 0.3,
+      backgroundGradientFromOpacity: 0.85,
+      backgroundGradientToOpacity: 0.25,
       decimalPlaces: 2,
       color: (opacity = 1) => hexToRgba(chartColor, opacity),
       labelColor: (opacity = 1) => hexToRgba('#374151', opacity),
       style: { borderRadius: 16 },
-      propsForDots: { 
-        r: '8', 
-        strokeWidth: '3', 
-        stroke: chartColor 
-      },
-      propsForBackgroundLines: { strokeDasharray: '5,5', stroke: hexToRgba('#E5E7EB', 0.5) },
-      horizontalLabelRotation: -45,
+      propsForDots: { r: '7', strokeWidth: '3', stroke: '#ffffff' },
+      propsForBackgroundLines: { strokeDasharray: '4,4', stroke: hexToRgba('#E5E7EB', 0.6) },
+      withHorizontalLabels: true,
+      withVerticalLabels: true,
+      horizontalLabelRotation: labels.length > 6 ? -45 : 0,
     };
 
     const handleDataPointClick = ({ value, index }: { value: number; index: number }) => {
       const record = paramHistory[index];
-      const xPosition = index * (chartWidth / (paramHistory.length - 1 || 1));
+      if (!record) return;
+
+      const pointSpacing = chartWidth / (paramHistory.length - 1 || 1);
+      const xPosition = index * pointSpacing;
+
+      const plotHeight = 180;
       let pixelY = plotHeight / 2;
       if (rangeY > 0) {
         pixelY = plotHeight - ((value - minY) / rangeY) * plotHeight;
       }
+
       setTooltipData({
         x: xPosition,
         pixelY,
@@ -271,22 +295,27 @@ const WaterQualityParameters: React.FC<Props> = ({
       });
     };
 
-    const tooltipLeft = tooltipData ? Math.min(Math.max(tooltipData.x - scrollX - 75, 10), screenWidth - 160) : 0;
+    const tooltipLeft = tooltipData 
+      ? Math.max(12, Math.min(tooltipData.x - scrollX - 85, screenWidth - 190))
+      : 0;
 
     return (
       <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>{`Historical Data (Avg: ${average}${unit ? ` ${unit}` : ''})`}</Text>
-        <View style={{ flex: 1, width: '100%' }}>
+        <Text style={styles.chartTitle}>
+          Historical Data (Avg: {average}{unit ? ` ${unit}` : ''})
+        </Text>
+
+        <View style={{ width: '100%' }}>
           <ScrollView 
             ref={scrollRef}
             horizontal 
             showsHorizontalScrollIndicator={false}
-            onScroll={(event) => setScrollX(event.nativeEvent.contentOffset.x)}
+            onScroll={(e) => setScrollX(e.nativeEvent.contentOffset.x)}
             scrollEventThrottle={16}
-            nestedScrollEnabled={true}
-            directionalLockEnabled={true}
+            nestedScrollEnabled
+            directionalLockEnabled
             bounces={false}
-            contentContainerStyle={{ alignItems: 'center' }}
+            contentContainerStyle={{ alignItems: 'center', paddingVertical: 8 }}
           >
             <TouchableOpacity activeOpacity={1} onPress={dismissOnChartPress}>
               <LineChart
@@ -298,118 +327,151 @@ const WaterQualityParameters: React.FC<Props> = ({
                 chartConfig={chartConfig}
                 bezier
                 onDataPointClick={handleDataPointClick}
-                style={{ borderRadius: 16 }}
+                style={{ borderRadius: 16, marginVertical: 8 }}
               />
             </TouchableOpacity>
           </ScrollView>
+
           {tooltipData && (
             <View
               style={[
-                styles.tooltip, 
+                styles.tooltip,
                 { 
-                  left: tooltipLeft, 
-                  top: 50 + tooltipData.pixelY - 50 
+                  left: tooltipLeft,
+                  top: 65 + tooltipData.pixelY,
                 }
               ]}
-              pointerEvents="box-none"
             >
               <TouchableOpacity
                 style={styles.tooltipContent}
                 onPress={dismissTooltip}
-                accessible
-                accessibilityLabel="Dismiss tooltip"
+                activeOpacity={0.9}
               >
-                <Text style={styles.tooltipText}>Value: {tooltipData.value.toFixed(2)}{tooltipData.unit ? ` ${tooltipData.unit}` : ''}</Text>
+                <Text style={styles.tooltipText}>
+                  Value: <Text style={{ fontWeight: '700' }}>{tooltipData.value.toFixed(2)}</Text>{tooltipData.unit}
+                </Text>
                 <Text style={styles.tooltipText}>Time: {tooltipData.formattedDate}</Text>
-                <Text style={styles.tooltipText}>Ideal Range: {tooltipData.idealRange.min.toFixed(2)} - {tooltipData.idealRange.max.toFixed(2)}{tooltipData.unit ? ` ${tooltipData.unit}` : ''}</Text>
-                <Text style={[styles.tooltipText, { 
-                  color: tooltipData.value >= tooltipData.idealRange.min && tooltipData.value <= tooltipData.idealRange.max ? '#10B981' : '#EF4444',
-                  fontWeight: '600'
+                <Text style={styles.tooltipText}>
+                  Ideal: {tooltipData.idealRange.min.toFixed(1)} — {tooltipData.idealRange.max.toFixed(1)}{tooltipData.unit}
+                </Text>
+                <Text style={[styles.tooltipStatus, {
+                  color: tooltipData.value >= tooltipData.idealRange.min && 
+                         tooltipData.value <= tooltipData.idealRange.max 
+                    ? '#10B981' 
+                    : '#EF4444'
                 }]}>
-                  {tooltipData.value >= tooltipData.idealRange.min && tooltipData.value <= tooltipData.idealRange.max ? '✅ Within Ideal Range' : '⚠️ Outside Ideal Range'}
+                  {tooltipData.value >= tooltipData.idealRange.min && 
+                   tooltipData.value <= tooltipData.idealRange.max 
+                    ? '✅ Within Ideal Range' 
+                    : '⚠️ Outside Ideal Range'}
                 </Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
-        <Text style={styles.chartFooter}>Tap points on the chart for details</Text>
+
+        <Text style={styles.chartFooter}>Tap any point on the line for details</Text>
       </View>
     );
   };
 
+  // Latest parameter values
   const latestParam = parameters[pond.pond_name];
-  const getParamValue = (key: ParamKey) => latestParam ? (latestParam[key] || 'N/A') : 'N/A';
-  const unit = (param: string) => parameterInfo[param]?.unit || '';
+  const getParamValue = (key: ParamKey): string => 
+    latestParam ? (latestParam[key] || 'N/A') : 'N/A';
+
+  const unitForParam = (param: string): string => 
+    parameterInfo[param]?.unit || '';
 
   const parameterCards = [
-    { label: 'Temp',    param: 'Temperature',   key: 'temperature', value: getParamValue('temperature'), icon: '🌡️' },
-    { label: 'pH',      param: 'pH Level',      key: 'pH',          value: getParamValue('pH'),         icon: '🧪' },
-    { label: 'Salinity',param: 'Salinity',      key: 'salinity',    value: getParamValue('salinity'),   icon: '💧' },
-    { label: 'Ammonia', param: 'Ammonia',       key: 'ammonia',     value: getParamValue('ammonia'),    icon: '☣️' },
+    { label: 'Temp',    param: 'Temperature', key: 'temperature', value: getParamValue('temperature'), icon: '🌡️' },
+    { label: 'pH',      param: 'pH Level',    key: 'pH',          value: getParamValue('pH'),         icon: '🧪' },
+    { label: 'Salinity',param: 'Salinity',    key: 'salinity',    value: getParamValue('salinity'),   icon: '💧' },
+    { label: 'Ammonia', param: 'Ammonia',     key: 'ammonia',     value: getParamValue('ammonia'),    icon: '☣️' },
   ];
 
   return (
     <>
       <Text style={styles.parametersTitle}>Water Quality Parameters</Text>
+
       <View style={styles.parameterGrid}>
         {parameterCards.map(({ label, param, key, value, icon }) => (
           <TouchableOpacity
             key={param}
-            style={[styles.parameterCard, { backgroundColor: parameterInfo[param].color, borderWidth: 1, borderColor: parameterInfo[param].chartColor }]}
-            onPress={() => key ? handleParamPress(param, value, key as ParamKey, pond.pond_name) : showParameterModal(param, value)}
-            accessible
-            accessibilityLabel={`${param}: ${value}`}
+            style={[
+              styles.parameterCard,
+              { 
+                backgroundColor: parameterInfo[param].color, 
+                borderColor: parameterInfo[param].chartColor 
+              }
+            ]}
+            onPress={() => key 
+              ? handleParamPress(param, value, key as ParamKey, pond.pond_name) 
+              : showParameterModal(param, value)
+            }
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
+            activeOpacity={0.85}
           >
             <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
               <Text style={styles.paramIcon}>{icon}</Text>
               <Text style={styles.parameterLabel}>{label}</Text>
-              <Text style={styles.parameterValue}>{value ? `${value}${unit(param)}` : value}</Text>
+              <Text style={styles.parameterValue}>
+                {value}{value !== 'N/A' ? unitForParam(param) : ''}
+              </Text>
             </Animated.View>
           </TouchableOpacity>
         ))}
       </View>
 
+      {/* Modal */}
       <Modal visible={paramModal.visible} animationType="slide" transparent>
         <Animated.View style={[styles.modalOverlay, { opacity: fadeAnim }]}>
           <View style={[styles.modalCard, { backgroundColor: paramModal.color }]}>
+            
+            {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <View style={styles.headerActionsLeft} />
               <View style={styles.headerContent}>
                 <Text style={styles.modalTitle}>{paramModal.parameter}</Text>
               </View>
-              <View style={styles.headerActionsRight}>
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={() => {
-                    setParamModal({ ...paramModal, visible: false });
-                    setParamHistory([]);
-                    setTooltipData(null);
-                  }}
-                  onPressIn={handlePressIn}
-                  onPressOut={handlePressOut}
-                  accessible
-                  accessibilityLabel="Close modal"
-                >
-                  <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-                    <Text style={styles.closeButtonText}>✕</Text>
-                  </Animated.View>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => {
+                  setParamModal(prev => ({ ...prev, visible: false }));
+                  setParamHistory([]);
+                  setTooltipData(null);
+                }}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+              >
+                <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </Animated.View>
+              </TouchableOpacity>
             </View>
+
+            {/* Modal Content */}
             <ScrollView 
-              style={styles.modalScrollContainer} 
+              style={styles.modalScrollContainer}
               showsVerticalScrollIndicator={false}
-              directionalLockEnabled={true}
-              bounces={false}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              }
             >
               <View style={styles.paramValueContainer}>
-                <Text style={styles.paramValue}>{paramModal.value}</Text>
+                <Text style={styles.paramValue}>
+                  {paramModal.value}{paramModal.value !== 'N/A' ? unitForParam(paramModal.parameter) : ''}
+                </Text>
               </View>
+
               <Text style={styles.paramDescription}>{paramModal.description}</Text>
+
               {historyLoading ? (
-                <ActivityIndicator size="large" color={parameterInfo[paramModal.parameter]?.chartColor || '#3B82F6'} style={styles.loadingIndicator} />
+                <ActivityIndicator 
+                  size="large" 
+                  color={parameterInfo[paramModal.parameter]?.chartColor || '#3B82F6'} 
+                  style={styles.loadingIndicator} 
+                />
               ) : (
                 renderChart()
               )}
@@ -423,10 +485,10 @@ const WaterQualityParameters: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   parametersTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#1F2937',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   parameterGrid: {
     flexDirection: 'row',
@@ -437,81 +499,77 @@ const styles = StyleSheet.create({
   parameterCard: {
     borderRadius: 16,
     padding: 16,
-    margin: 2,
-    flexBasis: '48%',
+    margin: 4,
+    flexBasis: '47%',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1.5,
   },
   paramIcon: {
-    fontSize: 28,
-    marginBottom: 6,
+    fontSize: 32,
+    marginBottom: 8,
   },
   parameterLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#6B7280',
-    fontWeight: '500',
+    fontWeight: '600',
     marginBottom: 4,
     textAlign: 'center',
   },
   parameterValue: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 19,
+    fontWeight: '700',
     textAlign: 'center',
+    color: '#1F2937',
   },
+
+  // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 8,
+    padding: 10,
   },
   modalCard: {
     borderRadius: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 15,
     overflow: 'hidden',
     width: '100%',
-    height: '85%',
+    height: '88%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingVertical: 18,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-    backgroundColor: '#BFDBFE',
-  },
-  headerActionsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerActionsRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: '#ffffff',
   },
   headerContent: {
     flex: 1,
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: '700',
     color: '#1F2937',
   },
   closeButton: {
-    padding: 8,
+    padding: 10,
   },
   closeButtonText: {
-    fontSize: 22,
+    fontSize: 26,
     color: '#6B7280',
     fontWeight: '600',
   },
@@ -521,36 +579,37 @@ const styles = StyleSheet.create({
   },
   paramValueContainer: {
     backgroundColor: '#FFFFFF',
-    padding: 16,
+    padding: 20,
     borderRadius: 16,
-    marginBottom: 16,
-    width: '100%',
+    marginBottom: 20,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
     elevation: 2,
   },
   paramValue: {
-    fontSize: 24,
+    fontSize: 28,
     color: '#1F2937',
     fontWeight: '700',
   },
   paramDescription: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#4B5563',
     textAlign: 'center',
-    marginBottom: 16,
-    lineHeight: 20,
+    marginBottom: 24,
+    lineHeight: 22,
   },
+
+  // Chart Styles
   chartContainer: {
     alignItems: 'center',
     marginBottom: 16,
     position: 'relative',
   },
   chartTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
     color: '#1F2937',
     marginBottom: 12,
@@ -558,54 +617,57 @@ const styles = StyleSheet.create({
   },
   emptyChartContainer: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 40,
     paddingHorizontal: 24,
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 16,
   },
   emptyChartText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#6B7280',
     textAlign: 'center',
-    fontWeight: '500',
   },
   chartFooter: {
-    fontSize: 12,
+    fontSize: 12.5,
     color: '#6B7280',
     textAlign: 'center',
     fontStyle: 'italic',
     marginTop: 8,
   },
+
+  // Tooltip
   tooltip: {
     position: 'absolute',
-    zIndex: 10,
-    backgroundColor: '#BFDBFE',
-    borderRadius: 8,
+    zIndex: 20,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-    maxWidth: 200,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 8,
+    maxWidth: 210,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: '#BFDBFE',
   },
   tooltipContent: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    padding: 14,
   },
   tooltipText: {
     color: '#1F2937',
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13.5,
     marginBottom: 4,
-    textAlign: 'left',
   },
+  tooltipStatus: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+
   loadingIndicator: {
-    marginVertical: 20,
+    marginVertical: 40,
   },
 });
 

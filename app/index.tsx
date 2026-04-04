@@ -109,7 +109,7 @@ export default function HomeScreen() {
   const PONDS_URL = `${BASE_URL}ponds.php`;
   const FEEDING_URL = `${BASE_URL}feeding_management_action.php`;
   const WATER_URL = `${BASE_URL}water_management_action.php`;
-  const PARAMETERS_URL = `${BASE_URL}smart_prawn_paramenters.php`;
+  const PARAMETERS_URL = `${BASE_URL}smart_prawn_parameters.php`;
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
