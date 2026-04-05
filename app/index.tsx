@@ -1,18 +1,19 @@
 // app/index.tsx
 import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  FlatList,
-  Image,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    FlatList,
+    Image,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 
@@ -128,11 +129,26 @@ export default function HomeScreen() {
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
 
+  // Load persisted notification state on mount
+  useEffect(() => {
+    AsyncStorage.multiGet(['notif_read_ids', 'notif_deleted_ids']).then((pairs) => {
+      pairs.forEach(([key, value]) => {
+        if (!value) return;
+        try {
+          const arr: string[] = JSON.parse(value);
+          if (key === 'notif_read_ids') setReadIds(new Set(arr));
+          if (key === 'notif_deleted_ids') setDeletedIds(new Set(arr));
+        } catch {}
+      });
+    });
+  }, []);
+
   const markNotificationRead = (id: string) => {
     setReadIds((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
       next.add(id);
+      AsyncStorage.setItem('notif_read_ids', JSON.stringify([...next]));
       return next;
     });
   };
@@ -141,6 +157,7 @@ export default function HomeScreen() {
     setDeletedIds((prev) => {
       const next = new Set(prev);
       next.add(id);
+      AsyncStorage.setItem('notif_deleted_ids', JSON.stringify([...next]));
       return next;
     });
   };
