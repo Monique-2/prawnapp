@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { requestNotificationPermissions } from './utils/notifications';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -14,6 +15,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (!fontsLoaded) return;
     const timer = setTimeout(async () => {
+      await requestNotificationPermissions();
       setReady(true);
       await SplashScreen.hideAsync();
     }, 2000);

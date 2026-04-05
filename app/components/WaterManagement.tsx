@@ -1,20 +1,21 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Dimensions,
+    FlatList,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 import { Pond, PostResponse, WaterManagementRecord } from '../index';
+import { cancelWaterNotification, scheduleWaterNotification } from '../utils/notifications';
 import AppToast, { ToastType } from './AppToast';
 
 interface WaterManagementProps {
@@ -122,6 +123,14 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
       const json: PostResponse = await res.json();
 
       if (json.success) {
+        // Schedule push notifications for this refill
+        scheduleWaterNotification(
+          Number(pond.id),
+          pond.pond_name,
+          dateTime,
+          waterType,
+          scheduled,
+        ).catch(console.error);
         showToast('success', 'Refill Scheduled', 'Your water refill has been saved.');
         resetForm();
         onRefreshAllWaterActions();
@@ -150,6 +159,11 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
       const json: PostResponse = await res.json();
 
       if (json.success) {
+        // Cancel the scheduled notifications for this refill
+        const record = allWaterActions.find((w) => w.wm_id === wm_id);
+        if (record) {
+          cancelWaterNotification(record.pond_id, record.scheduled_timestamp).catch(console.error);
+        }
         showToast('success', 'Refill Canceled', 'The water refill has been canceled.');
         onRefreshAllWaterActions();
         setHistoryVisible(false);

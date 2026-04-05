@@ -15,6 +15,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { cancelFeedingNotification, scheduleFeedingNotification } from '../utils/notifications';
 import AppToast, { ToastType } from './AppToast';
 
 interface Pond {
@@ -227,6 +228,14 @@ export default function FeedingManagementAction({
         setActions((prev) =>
           prev.map((r) => (r.fm_id === optimistic.fm_id ? { ...json.data, feed_unit: json.data.feed_unit ?? 'g' } : r))
         );
+        // Schedule a local push notification at the feeding time
+        scheduleFeedingNotification(
+          json.data.fm_id,
+          selectedPond.pond_name,
+          scheduledDateTime,
+          amt,
+          unit,
+        ).catch(console.error);
         showToast('success', 'Feeding Scheduled', 'Your feeding action has been saved.');
         resetForm();
         setFormVisible(false);
@@ -269,6 +278,8 @@ export default function FeedingManagementAction({
         setActions(prevActions);
         Alert.alert('Error', json.message || 'Cancel failed.');
       } else {
+        // Cancel the scheduled notification for this feeding
+        cancelFeedingNotification(fm_id).catch(console.error);
         Alert.alert('Success', 'Feeding action canceled.');
         await onRefreshFeedings(selectedPond!.id);
         await onRefreshAllFeedings();
