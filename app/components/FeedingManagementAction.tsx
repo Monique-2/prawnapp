@@ -15,6 +15,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import AppToast, { ToastType } from './AppToast';
 
 interface Pond {
   id: string;
@@ -51,7 +52,9 @@ export default function FeedingManagementAction({
 }: FeedingManagementProps) {
   const [formVisible, setFormVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
+  const [modeConfirmVisible, setModeConfirmVisible] = useState(false);
   const [actions, setActions] = useState<FeedingAction[]>([]);
+  const [feedingMode, setFeedingMode] = useState<'ai mode' | 'manual mode'>('ai mode');
 
   const [scheduledDateTime, setScheduledDateTime] = useState(new Date());
   const [showDateIOS, setShowDateIOS] = useState(false);
@@ -63,14 +66,20 @@ export default function FeedingManagementAction({
   const [amount, setAmount] = useState('');
   const [unit, setUnit] = useState<'g' | 'kg'>('g');
   const [mode, setMode] = useState<'ai mode' | 'manual mode'>('ai mode');
+  const [toast, setToast] = useState<{ visible: boolean; type: ToastType; title: string; message?: string }>({ visible: false, type: 'success', title: '' });
+
+  const showToast = (type: ToastType, title: string, message?: string) => {
+    setToast({ visible: true, type, title, message });
+    setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+  };
 
   const screenWidth = Dimensions.get('window').width;
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    new Date(iso.replace(' ', 'T')).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    new Date(iso.replace(' ', 'T')).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
   const getStatusText = (s: FeedingAction['action_status']): string =>
     ({
@@ -92,7 +101,7 @@ export default function FeedingManagementAction({
       failed: '#EF4444',
     }[s] ?? '#6B7280');
 
-  const isFuture = (ts: string) => new Date(ts) > new Date();
+  const isFuture = (ts: string) => new Date(ts.replace(' ', 'T')) > new Date();
 
   const onDateChange = (_: any, selected?: Date) => {
     if (Platform.OS === 'ios') setShowDateIOS(false);
@@ -134,7 +143,6 @@ export default function FeedingManagementAction({
     setTempDateAndroid(nowPlus1h);
     setAmount('');
     setUnit('g');
-    setMode('ai mode');
   };
 
   const fetchActions = async (pondId: string) => {
@@ -179,7 +187,8 @@ export default function FeedingManagementAction({
       return;
     }
 
-    const isoTimestamp = scheduledDateTime.toISOString().slice(0, 19).replace('T', ' ');
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const isoTimestamp = `${scheduledDateTime.getFullYear()}-${pad(scheduledDateTime.getMonth() + 1)}-${pad(scheduledDateTime.getDate())} ${pad(scheduledDateTime.getHours())}:${pad(scheduledDateTime.getMinutes())}:00`;
 
     const optimistic: FeedingAction = {
       fm_id: -Date.now(),
@@ -208,7 +217,7 @@ export default function FeedingManagementAction({
           scheduled_timestamp: isoTimestamp,
           amount_of_feed: amt,
           feed_unit: unit,
-          control_mode: mode,
+          control_mode: 'manual mode',
           action_status: optimistic.action_status,
         }),
       });
@@ -218,18 +227,18 @@ export default function FeedingManagementAction({
         setActions((prev) =>
           prev.map((r) => (r.fm_id === optimistic.fm_id ? { ...json.data, feed_unit: json.data.feed_unit ?? 'g' } : r))
         );
-        Alert.alert('Success', 'Feeding action scheduled.');
+        showToast('success', 'Feeding Scheduled', 'Your feeding action has been saved.');
         resetForm();
         setFormVisible(false);
         await onRefreshFeedings(selectedPond.id);
         await onRefreshAllFeedings();
       } else {
         setActions((prev) => prev.filter((r) => r.fm_id !== optimistic.fm_id));
-        Alert.alert('Error', json.message || 'Failed to create schedule.');
+        showToast('error', 'Failed', json.message || 'Failed to create schedule.');
       }
     } catch (err) {
       setActions((prev) => prev.filter((r) => r.fm_id !== optimistic.fm_id));
-      Alert.alert('Error', 'Network or server error.');
+      showToast('error', 'Network Error', 'Could not reach the server.');
     }
   };
 
@@ -353,11 +362,26 @@ export default function FeedingManagementAction({
       <Modal transparent animationType="slide" visible={true} onRequestClose={onClose}>
         <View style={styles.overlay}>
           <View style={[styles.card, { width: Math.min(screenWidth * 0.94, 520) }]}>
+            <AppToast visible={toast.visible} type={toast.type} title={toast.title} message={toast.message} />
             <View style={styles.header}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.title}>Feeding Management</Text>
                 <Text style={styles.subtitle}>Pond: {selectedPond.pond_name}</Text>
               </View>
+              <TouchableOpacity
+                style={[
+                  styles.modeBadge,
+                  feedingMode === 'ai mode' ? styles.modeBadgeAI : styles.modeBadgeManual,
+                ]}
+                onPress={() => setModeConfirmVisible(true)}
+              >
+                <Text style={[
+                  styles.modeBadgeTxt,
+                  feedingMode === 'ai mode' ? styles.modeBadgeTxtAI : styles.modeBadgeTxtManual,
+                ]}>
+                  {feedingMode === 'ai mode' ? 'AI Mode' : 'Manual Mode'}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                 <Text style={styles.closeTxt}>✕</Text>
               </TouchableOpacity>
@@ -378,11 +402,13 @@ export default function FeedingManagementAction({
                 </View>
               )}
               ListEmptyComponent={<Text style={styles.emptyText}>No pending or active feeding actions.</Text>}
-              ListFooterComponent={() => (
-                <TouchableOpacity style={styles.addBtn} onPress={() => setFormVisible(true)}>
-                  <Text style={styles.addTxt}>+ Schedule New Feeding</Text>
-                </TouchableOpacity>
-              )}
+              ListFooterComponent={() =>
+                feedingMode === 'manual mode' ? (
+                  <TouchableOpacity style={styles.addBtn} onPress={() => setFormVisible(true)}>
+                    <Text style={styles.addTxt}>+ Schedule New Feeding</Text>
+                  </TouchableOpacity>
+                ) : null
+              }
               contentContainerStyle={{ padding: 20 }}
             />
           </View>
@@ -410,7 +436,93 @@ export default function FeedingManagementAction({
               keyExtractor={(item) => item.fm_id.toString()}
               ListEmptyComponent={<Text style={styles.emptyText}>No past feeding records.</Text>}
               contentContainerStyle={{ padding: 20 }}
+              ListHeaderComponent={() => {
+                if (historyActions.length === 0) return null;
+                const totalFed = historyActions.reduce((sum, r) => {
+                  const amt = Number(r.amount_of_feed) || 0;
+                  const grams = r.feed_unit === 'kg' ? amt * 1000 : amt;
+                  return sum + grams;
+                }, 0);
+                const completed = historyActions.filter((r) => r.action_status === 'completed').length;
+                const failed = historyActions.filter((r) =>
+                  ['failed', 'canceled_by_user', 'canceled_by_ai'].includes(r.action_status)
+                ).length;
+                const chartItems = historyActions.slice(0, 8);
+                const maxGrams = Math.max(...chartItems.map((r) => {
+                  const amt = Number(r.amount_of_feed) || 0;
+                  return r.feed_unit === 'kg' ? amt * 1000 : amt;
+                }), 1);
+                return (
+                  <View style={histStyles.summaryContainer}>
+                    <Text style={histStyles.summaryTitle}>Summary</Text>
+                    <View style={histStyles.statsRow}>
+                      <View style={histStyles.statBox}>
+                        <Text style={histStyles.statValue}>{historyActions.length}</Text>
+                        <Text style={histStyles.statLabel}>Total</Text>
+                      </View>
+                      <View style={histStyles.statBox}>
+                        <Text style={[histStyles.statValue, { color: '#22C55E' }]}>{completed}</Text>
+                        <Text style={histStyles.statLabel}>Completed</Text>
+                      </View>
+                      <View style={histStyles.statBox}>
+                        <Text style={[histStyles.statValue, { color: '#EF4444' }]}>{failed}</Text>
+                        <Text style={histStyles.statLabel}>Missed/Failed</Text>
+                      </View>
+                      <View style={histStyles.statBox}>
+                        <Text style={histStyles.statValue}>{totalFed >= 1000 ? `${(totalFed / 1000).toFixed(1)}kg` : `${totalFed.toFixed(0)}g`}</Text>
+                        <Text style={histStyles.statLabel}>Total Fed</Text>
+                      </View>
+                    </View>
+                    <Text style={[histStyles.summaryTitle, { marginTop: 16 }]}>Recent Feedings (g)</Text>
+                    {chartItems.map((r) => {
+                      const amt = Number(r.amount_of_feed) || 0;
+                      const grams = r.feed_unit === 'kg' ? amt * 1000 : amt;
+                      const barW = Math.max((grams / maxGrams) * 100, 4);
+                      const color = getStatusColor(r.action_status);
+                      const dateLabel = new Date(r.scheduled_timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                      return (
+                        <View key={r.fm_id} style={histStyles.barRow}>
+                          <Text style={histStyles.barLabel}>{dateLabel}</Text>
+                          <View style={histStyles.barTrack}>
+                            <View style={[histStyles.barFill, { width: `${barW}%`, backgroundColor: color }]} />
+                          </View>
+                          <Text style={histStyles.barValue}>{grams.toFixed(0)}g</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              }}
             />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="fade" visible={modeConfirmVisible} onRequestClose={() => setModeConfirmVisible(false)}>
+        <View style={styles.overlay}>
+          <View style={[styles.card, { width: Math.min(screenWidth * 0.85, 360), maxHeight: 'auto' as any }]}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Change Feeding Mode</Text>
+            </View>
+            <View style={{ padding: 20, gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.modeOptionBtn, feedingMode === 'ai mode' && styles.modeOptionBtnActive]}
+                onPress={() => { setFeedingMode('ai mode'); setModeConfirmVisible(false); }}
+              >
+                <Text style={[styles.modeOptionTxt, feedingMode === 'ai mode' && styles.modeOptionTxtActive]}>AI Mode</Text>
+                <Text style={styles.modeOptionDesc}>Feeding is managed automatically by AI</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeOptionBtn, feedingMode === 'manual mode' && styles.modeOptionBtnActive]}
+                onPress={() => { setFeedingMode('manual mode'); setModeConfirmVisible(false); }}
+              >
+                <Text style={[styles.modeOptionTxt, feedingMode === 'manual mode' && styles.modeOptionTxtActive]}>Manual Mode</Text>
+                <Text style={styles.modeOptionDesc}>You schedule feedings manually</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btn, styles.btnCancel, { marginTop: 4 }]} onPress={() => setModeConfirmVisible(false)}>
+                <Text style={styles.btnTxtCancel}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -420,7 +532,7 @@ export default function FeedingManagementAction({
           <View style={[styles.card, { width: Math.min(screenWidth * 0.92, 440) }]}>
             <View style={styles.header}>
               <Text style={styles.title}>Schedule Feeding</Text>
-              <TouchableOpacity onPress={() => setFormVisible(false)}>
+              <TouchableOpacity onPress={() => setFormVisible(false)} style={styles.closeBtn}>
                 <Text style={styles.closeTxt}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -483,20 +595,6 @@ export default function FeedingManagementAction({
                   </View>
                 </View>
               </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Control Mode</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={mode}
-                    onValueChange={(v: 'ai mode' | 'manual mode') => setMode(v)}
-                    style={{ height: 50 }}
-                  >
-                    <Picker.Item label="AI Mode" value="ai mode" />
-                    <Picker.Item label="Manual Mode" value="manual mode" />
-                  </Picker>
-                </View>
-              </View>
             </ScrollView>
 
             <View style={styles.footer}>
@@ -517,136 +615,277 @@ export default function FeedingManagementAction({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   card: {
-    backgroundColor: '#fefaf4',
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     maxHeight: '88%',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 12,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fef3c7',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#fcd34d44',
+    borderBottomColor: '#F3F0EB',
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#92400e' },
-  subtitle: { fontSize: 14, color: '#6b7280', marginTop: 4 },
-  closeBtn: { padding: 12 },
-  closeTxt: { fontSize: 24, color: '#6b7280' },
-  section: { fontSize: 18, fontWeight: '700', color: '#92400e', marginBottom: 12 },
+  title: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
+  subtitle: { fontSize: 13, color: '#9CA3AF', marginTop: 2 },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  closeTxt: { fontSize: 18, color: '#6B7280', lineHeight: 22 },
+  modeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    marginLeft: 8,
+  },
+  modeBadgeAI: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  modeBadgeManual: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  modeBadgeTxt: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modeBadgeTxtAI: {
+    color: '#1D4ED8',
+  },
+  modeBadgeTxtManual: {
+    color: '#15803D',
+  },
+  modeOptionBtn: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  modeOptionBtnActive: {
+    borderColor: '#FF8C00',
+    backgroundColor: '#FFF7ED',
+  },
+  modeOptionTxt: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 3,
+  },
+  modeOptionTxtActive: {
+    color: '#FF8C00',
+  },
+  modeOptionDesc: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  section: { fontSize: 13, fontWeight: '700', color: '#9CA3AF', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   actionCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#FAFAF8',
     borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
+    padding: 16,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#F0EDE8',
   },
   activeCard: {
-    borderColor: '#fcd34d',
-    backgroundColor: '#fffbeb',
+    borderColor: '#FBBF24',
+    backgroundColor: '#FFFBEB',
   },
   actionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  dateLarge: { fontSize: 17, fontWeight: '700', color: '#92400e' },
-  timeText: { fontSize: 15, color: '#4b5563', marginTop: 2 },
+  dateLarge: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
+  timeText: { fontSize: 13, color: '#6B7280', marginTop: 2 },
   detailsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  labelSmall: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
-  value: { fontSize: 16, fontWeight: '600', color: '#1f2937' },
-  valueSmall: { fontSize: 15, color: '#1f2937' },
+  labelSmall: { fontSize: 11, color: '#9CA3AF', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.3 },
+  value: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
+  valueSmall: { fontSize: 14, color: '#374151' },
   statusRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   tag: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
-  tagText: { color: 'white', fontSize: 12, fontWeight: '600' },
+  tagText: { color: 'white', fontSize: 12, fontWeight: '700' },
   cancelBtn: {
-    backgroundColor: '#fee2e2',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: '#FECACA',
   },
-  cancelTxt: { color: '#dc2626', fontWeight: '600' },
+  cancelTxt: { color: '#DC2626', fontWeight: '600', fontSize: 13 },
   addBtn: {
-    backgroundColor: '#f97316',
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: '#FF8C00',
+    paddingVertical: 15,
+    borderRadius: 14,
     alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: 12,
+    shadowColor: '#FF8C00',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  addTxt: { color: 'white', fontSize: 16, fontWeight: '600' },
+  addTxt: { color: 'white', fontSize: 16, fontWeight: '700' },
   historyLink: {
-    color: '#2563eb',
+    color: '#FF8C00',
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 14,
   },
-  field: { marginBottom: 24 },
-  label: { fontSize: 15, fontWeight: '600', color: '#92400e', marginBottom: 8 },
+  field: { marginBottom: 20 },
+  label: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
   input: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
     padding: 14,
-    fontSize: 16,
-    backgroundColor: '#f9fafb',
+    fontSize: 15,
+    backgroundColor: '#F9FAFB',
+    color: '#1F2937',
   },
   pickerWrapper: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    backgroundColor: '#f9fafb',
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
     overflow: 'hidden',
     flex: 1,
   },
   footer: {
     flexDirection: 'row',
-    padding: 20,
-    gap: 12,
+    padding: 16,
+    gap: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    backgroundColor: '#fef3c7',
+    borderTopColor: '#F3F0EB',
+    backgroundColor: '#FFFFFF',
   },
   btn: {
     flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 15,
+    borderRadius: 14,
     alignItems: 'center',
   },
-  btnCancel: { backgroundColor: '#f3f4f6' },
-  btnSave: { backgroundColor: '#f97316' },
-  btnTxt: { color: 'white', fontSize: 16, fontWeight: '600' },
-  btnTxtCancel: { color: '#4b5563', fontWeight: '600' },
+  btnCancel: { backgroundColor: '#F3F4F6' },
+  btnSave: { backgroundColor: '#FF8C00' },
+  btnTxt: { color: 'white', fontSize: 15, fontWeight: '700' },
+  btnTxtCancel: { color: '#6B7280', fontWeight: '600' },
   emptyText: {
-    color: '#6b7280',
+    color: '#9CA3AF',
     textAlign: 'center',
     paddingVertical: 40,
-    fontSize: 15,
+    fontSize: 14,
+  },
+});
+
+const histStyles = StyleSheet.create({
+  summaryContainer: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  summaryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statBox: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 10,
+    marginHorizontal: 3,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  barRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  barLabel: {
+    width: 50,
+    fontSize: 11,
+    color: '#6b7280',
+  },
+  barTrack: {
+    flex: 1,
+    height: 14,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 7,
+    overflow: 'hidden',
+    marginHorizontal: 6,
+  },
+  barFill: {
+    height: 14,
+    borderRadius: 7,
+  },
+  barValue: {
+    width: 44,
+    fontSize: 11,
+    color: '#374151',
+    textAlign: 'right',
   },
 });

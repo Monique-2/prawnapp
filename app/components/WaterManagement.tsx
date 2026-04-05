@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { Pond, PostResponse, WaterManagementRecord } from '../index';
+import AppToast, { ToastType } from './AppToast';
 
 interface WaterManagementProps {
   visible: boolean;
@@ -26,7 +27,6 @@ interface WaterManagementProps {
 }
 
 type ActionStatus = 'pending' | 'in_progress' | 'completed' | 'canceled' | 'failed';
-type ActionType = 'refill from freshwater' | 'refill from brackishwater';
 
 const WaterManagement: React.FC<WaterManagementProps> = ({
   visible,
@@ -40,19 +40,27 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
   const [historyVisible, setHistoryVisible] = useState(false);
 
   const [dateTime, setDateTime] = useState(new Date());
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+  const [showDateIOS, setShowDateIOS] = useState(false);
+  const [showTimeIOS, setShowTimeIOS] = useState(false);
+  const [showDateAndroid, setShowDateAndroid] = useState(false);
+  const [showTimeAndroid, setShowTimeAndroid] = useState(false);
   const [tempDateAndroid, setTempDateAndroid] = useState(new Date());
 
-  const [actionType, setActionType] = useState<ActionType>('refill from freshwater');
   const [status, setStatus] = useState<ActionStatus>('pending');
+  const [waterType, setWaterType] = useState<'refill from freshwater' | 'refill from brackishwater'>('refill from freshwater');
+  const [toast, setToast] = useState<{ visible: boolean; type: ToastType; title: string; message?: string }>({ visible: false, type: 'success', title: '' });
+
+  const showToast = (type: ToastType, title: string, message?: string) => {
+    setToast({ visible: true, type, title, message });
+    setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+  };
 
   const screenWidth = Dimensions.get('window').width;
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
-  const formatDateTime = (iso: string | null) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleString('en-US', {
+  const formatDateTime = (iso: string) => {
+    // Replace space with T so JS parses it as local time consistently
+    return new Date(iso.replace(' ', 'T')).toLocaleString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -80,21 +88,25 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
       failed: '#EF4444',
     }[s] ?? '#6B7280');
 
-  // ─── API Calls ─────────────────────────────────────────────────────────────
+  const updateStatusFromDate = (_dt = dateTime) => {};
+
+  // ─── API ───────────────────────────────────────────────────────────────────
   const saveAction = async () => {
     if (!pond) {
       Alert.alert('Error', 'No pond selected.');
       return;
     }
 
-    const scheduled = dateTime.toISOString().slice(0, 19).replace('T', ' ');
+    // MySQL-friendly format using LOCAL time (avoids UTC offset shifting the time)
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const scheduled = `${dateTime.getFullYear()}-${pad(dateTime.getMonth() + 1)}-${pad(dateTime.getDate())} ${pad(dateTime.getHours())}:${pad(dateTime.getMinutes())}:00`;
 
     try {
       const payload = {
         pond_id: Number(pond.id),
-        action_type: actionType,
+        action_type: waterType,
         scheduled_timestamp: scheduled,
-        action_status: status,
+        action_status: 'pending' as const,
       };
 
       const res = await fetch(WATER_URL, {
@@ -110,23 +122,23 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
       const json: PostResponse = await res.json();
 
       if (json.success) {
-        Alert.alert('Success', 'Water refill scheduled successfully!');
+        showToast('success', 'Refill Scheduled', 'Your water refill has been saved.');
         resetForm();
         onRefreshAllWaterActions();
         setFormVisible(false);
       } else {
-        Alert.alert('Error', json.message || 'Failed to schedule refill.');
+        showToast('error', 'Failed', json.message || 'Failed to schedule refill.');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Save action failed:', err);
-      Alert.alert('Error', err.message || 'Failed to save refill. Check connection.');
+      showToast('error', 'Network Error', 'Failed to save refill. Check your connection.');
     }
   };
 
   const cancelAction = async (wm_id: number) => {
     try {
       const res = await fetch(`${WATER_URL}?wm_id=${wm_id}`, {
-        method: 'PUT',                    // Matches your updated PHP
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_status: 'canceled' }),
       });
@@ -138,68 +150,93 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
       const json: PostResponse = await res.json();
 
       if (json.success) {
-        Alert.alert('Success', 'Refill has been canceled.');
+        showToast('success', 'Refill Canceled', 'The water refill has been canceled.');
         onRefreshAllWaterActions();
         setHistoryVisible(false);
       } else {
-        Alert.alert('Error', json.message || 'Failed to cancel refill.');
+        showToast('error', 'Failed', json.message || 'Failed to cancel refill.');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Cancel action failed:', err);
-      Alert.alert('Error', 'Could not cancel the refill at this time.');
+      showToast('error', 'Network Error', 'Could not cancel the refill at this time.');
     }
   };
 
-  // ─── Form Logic ────────────────────────────────────────────────────────────
+  // ─── Form logic ────────────────────────────────────────────────────────────
   const resetForm = () => {
     const now = new Date();
     setDateTime(now);
     setTempDateAndroid(now);
-    setActionType('refill from freshwater');
     setStatus('pending');
-    setShowPicker(false);
+    setWaterType('refill from freshwater');
+    setShowDateIOS(false);
+    setShowTimeIOS(false);
+    setShowDateAndroid(false);
+    setShowTimeAndroid(false);
+    updateStatusFromDate(now);
   };
 
-  const showPickerModal = (mode: 'date' | 'time') => {
-    setPickerMode(mode);
-    if (Platform.OS === 'android') {
-      setTempDateAndroid(new Date(dateTime));
+  const onDateChangeIOS = (_: any, selected?: Date) => {
+    setShowDateIOS(false);
+    if (selected) {
+      const next = new Date(dateTime);
+      next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+      setDateTime(next);
+      updateStatusFromDate(next);
     }
-    setShowPicker(true);
   };
 
-  const onPickerChange = (_: any, selectedDate?: Date) => {
-    setShowPicker(false);
-    if (!selectedDate) return;
+  const onTimeChangeIOS = (_: any, selected?: Date) => {
+    setShowTimeIOS(false);
+    if (selected) {
+      const next = new Date(dateTime);
+      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+      setDateTime(next);
+      updateStatusFromDate(next);
+    }
+  };
 
-    const newDate = new Date(dateTime);
+  const onDateChangeAndroid = (_: any, selected?: Date) => {
+    setShowDateAndroid(false);
+    if (selected) {
+      const next = new Date(dateTime);
+      next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+      setDateTime(next);
+      updateStatusFromDate(next);
+    }
+  };
 
-    if (pickerMode === 'date') {
-      newDate.setFullYear(
-        selectedDate.getFullYear(),
-        selectedDate.getMonth(),
-        selectedDate.getDate()
-      );
+  const onTimeChangeAndroid = (_: any, selected?: Date) => {
+    setShowTimeAndroid(false);
+    if (selected) {
+      const next = new Date(dateTime);
+      next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+      setDateTime(next);
+      updateStatusFromDate(next);
+    }
+  };
+
+  const showDate = () => {
+    if (Platform.OS === 'ios') {
+      setShowDateIOS(true);
     } else {
-      newDate.setHours(
-        selectedDate.getHours(),
-        selectedDate.getMinutes(),
-        0,
-        0
-      );
+      setShowDateAndroid(true);
     }
-
-    setDateTime(newDate);
   };
 
-  const updateStatusFromDate = (dt: Date = dateTime) => {
-    setStatus(dt > new Date() ? 'pending' : 'completed');
+  const showTime = () => {
+    if (Platform.OS === 'ios') {
+      setShowTimeIOS(true);
+    } else {
+      setTempDateAndroid(new Date(dateTime));
+      setShowTimeAndroid(true);
+    }
   };
 
-  // ─── Effects ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (visible) resetForm();
-    else {
+    if (visible) {
+      resetForm();
+    } else {
       setFormVisible(false);
       setHistoryVisible(false);
     }
@@ -211,7 +248,7 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
 
   if (!visible || !pond) return null;
 
-  // ─── Render Action Card ────────────────────────────────────────────────────
+  // ─── Render single action ──────────────────────────────────────────────────
   const renderAction = ({ item }: { item: WaterManagementRecord }) => {
     const isActive = item.action_status === 'pending' || item.action_status === 'in_progress';
     const canCancel = isActive;
@@ -240,10 +277,12 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
 
         <View style={styles.statusRow}>
           <Text style={styles.label}>Type</Text>
-          <Text style={styles.readonlyValue}>{item.action_type}</Text>
+          <Text style={styles.actionTypeText}>
+            {item.action_type === 'refill from freshwater' ? '💧 Fresh Water' : '🌊 Brackish Water'}
+          </Text>
         </View>
 
-        <View style={styles.statusRow}>
+        <View style={[styles.statusRow, { marginTop: 6 }]}>
           <Text style={styles.label}>Status</Text>
           <View style={[styles.tag, { backgroundColor: getStatusColor(item.action_status) }]}>
             <Text style={styles.tagText}>{getStatusText(item.action_status)}</Text>
@@ -255,10 +294,11 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
 
   return (
     <>
-      {/* Main Modal - Upcoming Refills */}
+      {/* Main modal – Upcoming Refills */}
       <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
         <View style={styles.overlay}>
           <View style={[styles.card, { width: Math.min(screenWidth * 0.94, 520) }]}>
+            <AppToast visible={toast.visible} type={toast.type} title={toast.title} message={toast.message} />
             <View style={styles.header}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.title}>Water Refill Management</Text>
@@ -270,7 +310,7 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
             </View>
 
             <FlatList
-              data={allWaterActions.filter((r) => ['pending', 'in_progress'].includes(r.action_status))}
+              data={allWaterActions.filter((r) => r.action_status === 'pending' || r.action_status === 'in_progress')}
               keyExtractor={(item) => item.wm_id.toString()}
               renderItem={renderAction}
               ListHeaderComponent={() => (
@@ -295,92 +335,79 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
         </View>
       </Modal>
 
-      {/* Schedule New Refill Form */}
+      {/* Form modal – Schedule Refill */}
       <Modal transparent animationType="slide" visible={formVisible} onRequestClose={() => setFormVisible(false)}>
         <View style={styles.overlay}>
           <View style={[styles.card, { width: Math.min(screenWidth * 0.92, 440) }]}>
             <View style={styles.header}>
-              <Text style={styles.title}>Schedule Water Refill</Text>
+              <Text style={styles.title}>Schedule Refill</Text>
               <TouchableOpacity onPress={() => setFormVisible(false)}>
                
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ padding: 24 }} contentContainerStyle={{ paddingBottom: 100 }}>
-              {/* Action Type */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Refill Type</Text>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <TouchableOpacity
-                    style={[styles.typeBtn, actionType === 'refill from freshwater' && styles.typeBtnActive]}
-                    onPress={() => setActionType('refill from freshwater')}
-                  >
-                    <Text style={[styles.typeBtnText, actionType === 'refill from freshwater' && styles.typeBtnTextActive]}>
-                      Freshwater
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.typeBtn, actionType === 'refill from brackishwater' && styles.typeBtnActive]}
-                    onPress={() => setActionType('refill from brackishwater')}
-                  >
-                    <Text style={[styles.typeBtnText, actionType === 'refill from brackishwater' && styles.typeBtnTextActive]}>
-                      Brackishwater
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Date */}
+            <ScrollView style={{ padding: 24 }}>
               <View style={styles.field}>
                 <Text style={styles.label}>Date</Text>
-                <TouchableOpacity onPress={() => showPickerModal('date')}>
+                <TouchableOpacity onPress={showDate}>
                   <TextInput
                     style={styles.input}
-                    value={dateTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    value={dateTime.toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
                     editable={false}
                   />
                 </TouchableOpacity>
+                {Platform.OS === 'ios' && showDateIOS && (
+                  <DateTimePicker value={dateTime} mode="date" onChange={onDateChangeIOS} />
+                )}
+                {Platform.OS === 'android' && showDateAndroid && (
+                  <DateTimePicker value={dateTime} mode="date" onChange={onDateChangeAndroid} />
+                )}
               </View>
 
-              {/* Time */}
               <View style={styles.field}>
                 <Text style={styles.label}>Time</Text>
-                <TouchableOpacity onPress={() => showPickerModal('time')}>
+                <TouchableOpacity onPress={showTime}>
                   <TextInput
                     style={styles.input}
-                    value={dateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    value={dateTime.toLocaleTimeString('en-US', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                     editable={false}
                   />
                 </TouchableOpacity>
+                {Platform.OS === 'ios' && showTimeIOS && (
+                  <DateTimePicker value={dateTime} mode="time" onChange={onTimeChangeIOS} />
+                )}
+                {Platform.OS === 'android' && showTimeAndroid && (
+                  <DateTimePicker
+                    value={tempDateAndroid}
+                    mode="time"
+                    onChange={onTimeChangeAndroid}
+                  />
+                )}
               </View>
 
-              {Platform.OS === 'android' && showPicker && (
-                <DateTimePicker
-                  value={tempDateAndroid}
-                  mode={pickerMode}
-                  onChange={onPickerChange}
-                  is24Hour={false}
-                />
-              )}
-
-              {Platform.OS === 'ios' && showPicker && (
-                <DateTimePicker
-                  value={dateTime}
-                  mode={pickerMode}
-                  onChange={onPickerChange}
-                  display="spinner"
-                />
-              )}
-
-              {/* Status (auto) */}
               <View style={styles.field}>
-                <Text style={styles.label}>Status</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: '#f3f4f6' }]}
-                  value={getStatusText(status)}
-                  editable={false}
-                />
+                <Text style={styles.label}>Water Type</Text>
+                <View style={styles.waterTypeRow}>
+                  <TouchableOpacity
+                    style={[styles.waterTypeBtn, styles.waterTypeFresh, waterType === 'refill from freshwater' && styles.waterTypeFreshActive]}
+                    onPress={() => setWaterType('refill from freshwater')}
+                  >
+                    <Text style={[styles.waterTypeTxt, waterType === 'refill from freshwater' && styles.waterTypeFreshTxtActive]}>Fresh Water</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.waterTypeBtn, styles.waterTypeBrackish, waterType === 'refill from brackishwater' && styles.waterTypeBrackishActive]}
+                    onPress={() => setWaterType('refill from brackishwater')}
+                  >
+                    <Text style={[styles.waterTypeTxt, waterType === 'refill from brackishwater' && styles.waterTypeBrackishTxtActive]}>Brackish Water</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
 
@@ -399,8 +426,13 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
         </View>
       </Modal>
 
-      {/* History Modal */}
-      <Modal transparent animationType="slide" visible={historyVisible} onRequestClose={() => setHistoryVisible(false)}>
+      {/* History modal */}
+      <Modal
+        transparent
+        animationType="slide"
+        visible={historyVisible}
+        onRequestClose={() => setHistoryVisible(false)}
+      >
         <View style={styles.overlay}>
           <View style={[styles.card, { width: Math.min(screenWidth * 0.94, 520) }]}>
             <View style={styles.header}>
@@ -421,6 +453,50 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
               renderItem={renderAction}
               ListEmptyComponent={<Text style={styles.emptyText}>No past refill actions found.</Text>}
               contentContainerStyle={{ padding: 20 }}
+              ListHeaderComponent={() => {
+                const histData = allWaterActions.filter((r) => !['pending', 'in_progress'].includes(r.action_status));
+                if (histData.length === 0) return null;
+                const completed = histData.filter((r) => r.action_status === 'completed').length;
+                const failed = histData.filter((r) => ['failed', 'canceled'].includes(r.action_status)).length;
+                const timelineItems = histData.slice(0, 10);
+                return (
+                  <View style={histStyles.summaryContainer}>
+                    <Text style={histStyles.summaryTitle}>Summary</Text>
+                    <View style={histStyles.statsRow}>
+                      <View style={histStyles.statBox}>
+                        <Text style={histStyles.statValue}>{histData.length}</Text>
+                        <Text style={histStyles.statLabel}>Total</Text>
+                      </View>
+                      <View style={histStyles.statBox}>
+                        <Text style={[histStyles.statValue, { color: '#22C55E' }]}>{completed}</Text>
+                        <Text style={histStyles.statLabel}>Completed</Text>
+                      </View>
+                      <View style={histStyles.statBox}>
+                        <Text style={[histStyles.statValue, { color: '#EF4444' }]}>{failed}</Text>
+                        <Text style={histStyles.statLabel}>Failed/Canceled</Text>
+                      </View>
+                    </View>
+                    <Text style={[histStyles.summaryTitle, { marginTop: 16 }]}>Recent Activity</Text>
+                    {timelineItems.map((r, idx) => {
+                      const color = getStatusColor(r.action_status);
+                      const label = formatDateTime(r.scheduled_timestamp);
+                      const statusText = getStatusText(r.action_status);
+                      return (
+                        <View key={r.wm_id} style={histStyles.timelineRow}>
+                          <View style={[histStyles.timelineDot, { backgroundColor: color }]} />
+                          {idx < timelineItems.length - 1 && <View style={histStyles.timelineLine} />}
+                          <View style={histStyles.timelineContent}>
+                            <Text style={histStyles.timelineDate}>{label}</Text>
+                            <View style={[histStyles.timelineBadge, { backgroundColor: color + '22' }]}>
+                              <Text style={[histStyles.timelineBadgeText, { color }]}>{statusText}</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              }}
             />
           </View>
         </View>
@@ -430,93 +506,339 @@ const WaterManagement: React.FC<WaterManagementProps> = ({
 };
 
 const styles = StyleSheet.create({
-  // ... (your existing styles remain the same)
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  card: { backgroundColor: '#fefaf4', borderRadius: 20, maxHeight: '88%', overflow: 'hidden' },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    maxHeight: '88%',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 12,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fef3c7',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#fcd34d44',
+    borderBottomColor: '#F3F0EB',
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#92400e' },
-  subtitle: { fontSize: 14, color: '#6b7280', marginTop: 4 },
-  closeBtn: { padding: 18 },
-  closeTxt: { fontSize: 24, color: '#6b7280' },
-  section: { fontSize: 18, fontWeight: '700', color: '#92400e', marginBottom: 12 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  closeTxt: {
+    fontSize: 18,
+    color: '#6B7280',
+    lineHeight: 22,
+  },
+  section: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   actionCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#FAFAF8',
     borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#F0EDE8',
+  },
+  activeCard: {
+    borderColor: '#FBBF24',
+    backgroundColor: '#FFFBEB',
+  },
+  actionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  dateLarge: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+    flex: 1,
+    paddingRight: 12,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  tag: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  tagText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  cancelBtn: {
+    backgroundColor: '#FEF2F2',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cancelTxt: {
+    color: '#DC2626',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  addBtn: {
+    backgroundColor: '#FF8C00',
+    paddingVertical: 15,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginVertical: 12,
+    shadowColor: '#FF8C00',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  addTxt: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  historyLink: {
+    color: '#FF8C00',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  field: {
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    backgroundColor: '#F9FAFB',
+    color: '#1F2937',
+  },
+  readonlyValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    padding: 14,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  waterTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  waterTypeBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  waterTypeFresh: {
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  waterTypeFreshActive: {
+    borderColor: '#3B82F6',
+    backgroundColor: '#DBEAFE',
+  },
+  waterTypeBrackish: {
+    borderColor: '#BBF7D0',
+    backgroundColor: '#F0FDF4',
+  },
+  waterTypeBrackishActive: {
+    borderColor: '#22C55E',
+    backgroundColor: '#DCFCE7',
+  },
+  waterTypeTxt: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  waterTypeFreshTxtActive: {
+    color: '#1D4ED8',
+  },
+  waterTypeBrackishTxtActive: {
+    color: '#15803D',
+  },
+  actionTypeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  footer: {
+    flexDirection: 'row',
+    padding: 16,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F0EB',
+    backgroundColor: '#FFFFFF',
+  },
+  btn: {
+    flex: 1,
+    paddingVertical: 15,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  btnCancel: {
+    backgroundColor: '#F3F4F6',
+  },
+  btnSave: {
+    backgroundColor: '#FF8C00',
+  },
+  btnTxt: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  btnTxtCancel: {
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  emptyText: {
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 40,
+    fontSize: 14,
+  },
+});
+
+const histStyles = StyleSheet.create({
+  summaryContainer: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  summaryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statBox: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 10,
+    marginHorizontal: 3,
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
-  activeCard: { borderColor: '#fcd34d', backgroundColor: '#fffbeb' },
-  actionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  dateLarge: { fontSize: 16, fontWeight: '700', color: '#92400e', flex: 1, paddingRight: 12 },
-  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-  label: { fontSize: 15, fontWeight: '600', color: '#92400e' },
-  tag: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
-  tagText: { color: 'white', fontSize: 13, fontWeight: '600' },
-  cancelBtn: {
-    backgroundColor: '#fee2e2',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-  },
-  cancelTxt: { color: '#dc2626', fontWeight: '600' },
-  addBtn: { backgroundColor: '#f97316', paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginVertical: 16 },
-  addTxt: { color: 'white', fontSize: 16, fontWeight: '600' },
-  historyLink: { color: '#2563eb', fontWeight: '600', fontSize: 15 },
-  field: { marginBottom: 24 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    backgroundColor: '#f9fafb',
-  },
-  readonlyValue: {
-    fontSize: 16,
-    fontWeight: '600',
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
     color: '#1f2937',
-    padding: 14,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
   },
-  footer: { flexDirection: 'row', padding: 20, gap: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fef3c7' },
-  btn: { flex: 1, paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
-  btnCancel: { backgroundColor: '#f3f4f6' },
-  btnSave: { backgroundColor: '#f97316' },
-  btnTxt: { color: 'white', fontSize: 16, fontWeight: '600' },
-  btnTxtCancel: { color: '#4b5563', fontWeight: '600' },
-  emptyText: { color: '#6b7280', textAlign: 'center', paddingVertical: 40, fontSize: 15 },
-
-  // New styles for refill type buttons
-  typeBtn: {
+  statLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+    position: 'relative',
+  },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginTop: 3,
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  timelineLine: {
+    position: 'absolute',
+    left: 5,
+    top: 15,
+    width: 2,
+    height: 20,
+    backgroundColor: '#e5e7eb',
+  },
+  timelineContent: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    justifyContent: 'space-between',
   },
-  typeBtnActive: {
-    backgroundColor: '#fef3c7',
-    borderColor: '#f59e0b',
+  timelineDate: {
+    fontSize: 12,
+    color: '#374151',
+    flex: 1,
   },
-  typeBtnText: { fontSize: 15, fontWeight: '600', color: '#6b7280' },
-  typeBtnTextActive: { color: '#92400e' },
+  timelineBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  timelineBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
 });
 
-export default WaterManagement;
+export default WaterManagement; 

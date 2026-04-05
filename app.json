@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "smartprawnapp",
+    "name": "Pondora",
     "slug": "smartprawnapp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,13 +14,17 @@
     "android": {
       "package": "com.yani.smartprawnapp",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
+      "usesCleartextTraffic": true,
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyA_mFgUqzUKoJytQ5XvKGsSdj-Fw5G8d4g"
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -32,19 +36,33 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 250,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#F8F5F0",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#1C1010"
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a7413160-6dbf-43ef-874e-8b9818a6df7d"
+      }
     }
   }
 }
